@@ -1,0 +1,6 @@
+{
+  "name": "Venturetec Receipt & Sales Management",
+  "description": "ระบบออกใบเสร็จรับเงิน จัดการประวัติการขาย และแคตตาล็อกสินค้า WASABI-O พร้อมเชื่อมต่อ Google Sheets & Google Drive",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -2,8 +2,31 @@ import { Receipt } from '../types';
 import { thaiBahtText } from '../utils/thaiBaht';
 import { setAccessTokenManually } from './firebaseAuth';
 
-export const TARGET_SPREADSHEET_ID = '1SDuEa3IZapuQtnHUH9QGxA8kjfz4JlpyiX0BtnTr24o';
-export const SPREADSHEET_URL = `https://docs.google.com/spreadsheets/d/${TARGET_SPREADSHEET_ID}/edit`;
+export const DEFAULT_TARGET_SPREADSHEET_ID = '1SDuEa3IZapuQtnHUH9QGxA8kjfz4JlpyiX0BtnTr24o';
+
+export function getTargetSpreadsheetId(): string {
+  try {
+    const custom = localStorage.getItem('venturetec_custom_spreadsheet_id');
+    return custom && custom.trim() ? custom.trim() : DEFAULT_TARGET_SPREADSHEET_ID;
+  } catch {
+    return DEFAULT_TARGET_SPREADSHEET_ID;
+  }
+}
+
+export function setTargetSpreadsheetId(id: string): void {
+  try {
+    if (!id || !id.trim() || id.trim() === DEFAULT_TARGET_SPREADSHEET_ID) {
+      localStorage.removeItem('venturetec_custom_spreadsheet_id');
+    } else {
+      localStorage.setItem('venturetec_custom_spreadsheet_id', id.trim());
+    }
+  } catch {}
+}
+
+export const TARGET_SPREADSHEET_ID = DEFAULT_TARGET_SPREADSHEET_ID;
+export const getSpreadsheetUrl = (id?: string) =>
+  `https://docs.google.com/spreadsheets/d/${id || getTargetSpreadsheetId()}/edit`;
+export const SPREADSHEET_URL = getSpreadsheetUrl();
 
 const HEADERS = [
   'เลขที่ใบเสร็จ',
@@ -99,7 +122,7 @@ export async function ensureSheetInitialized(
 export async function appendReceiptToGoogleSheet(
   receipt: Receipt,
   accessToken: string,
-  spreadsheetId: string = TARGET_SPREADSHEET_ID,
+  spreadsheetId: string = getTargetSpreadsheetId(),
   driveWebViewLink?: string
 ): Promise<boolean> {
   try {
@@ -240,7 +263,7 @@ export async function appendReceiptToGoogleSheet(
 
 export async function fetchSheetRows(
   accessToken: string,
-  spreadsheetId: string = TARGET_SPREADSHEET_ID
+  spreadsheetId: string = getTargetSpreadsheetId()
 ): Promise<any[]> {
   try {
     const sheetTitle = await ensureSheetInitialized(spreadsheetId, accessToken);
@@ -267,7 +290,7 @@ export async function fetchSheetRows(
  */
 export async function pullReceiptsFromGoogleSheet(
   accessToken: string,
-  spreadsheetId: string = TARGET_SPREADSHEET_ID
+  spreadsheetId: string = getTargetSpreadsheetId()
 ): Promise<Receipt[]> {
   try {
     const sheetTitle = await ensureSheetInitialized(spreadsheetId, accessToken);

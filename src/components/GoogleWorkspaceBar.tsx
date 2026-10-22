@@ -8,8 +8,8 @@ import {
   RefreshCw,
   CloudDownload,
 } from 'lucide-react';
-import { SPREADSHEET_URL } from '../services/googleSheets';
-import { DRIVE_FOLDER_URL } from '../services/googleDrive';
+import { getTargetSpreadsheetId, getSpreadsheetUrl } from '../services/googleSheets';
+import { getTargetFolderId, getDriveFolderUrl } from '../services/googleDrive';
 
 interface GoogleWorkspaceBarProps {
   user: any;
@@ -45,10 +45,10 @@ export const GoogleWorkspaceBar: React.FC<GoogleWorkspaceBarProps> = ({
           <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 shrink-0" />
           <span className="font-semibold text-[11px] sm:text-xs">Google Sheet:</span>
           <span className="text-[10px] sm:text-[11px] text-emerald-800 font-mono hidden md:inline">
-            1SDuEa3...BtnTr24o
+            {getTargetSpreadsheetId().slice(0, 7)}...{getTargetSpreadsheetId().slice(-8)}
           </span>
           <a
-            href={SPREADSHEET_URL}
+            href={getSpreadsheetUrl()}
             target="_blank"
             rel="noreferrer"
             title="เปิด Google Sheet บันทึกการขาย"
@@ -63,10 +63,10 @@ export const GoogleWorkspaceBar: React.FC<GoogleWorkspaceBarProps> = ({
           <FolderSync className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 shrink-0" />
           <span className="font-semibold text-[11px] sm:text-xs">Google Drive:</span>
           <span className="text-[10px] sm:text-[11px] text-blue-800 font-mono hidden md:inline">
-            1vDmg8E2...EQqBNbD
+            {getTargetFolderId().slice(0, 8)}...{getTargetFolderId().slice(-7)}
           </span>
           <a
-            href={DRIVE_FOLDER_URL}
+            href={getDriveFolderUrl()}
             target="_blank"
             rel="noreferrer"
             title="เปิดโฟลเดอร์เก็บ PDF ใน Google Drive"
@@ -92,21 +92,27 @@ export const GoogleWorkspaceBar: React.FC<GoogleWorkspaceBarProps> = ({
               </button>
             )}
 
-            {pendingCount === 0 ? (
-              <span className="text-emerald-600 flex items-center gap-1 font-medium text-[11px]">
-                <CheckCircle className="w-3.5 h-3.5" /> ซิงก์เรียบร้อย
+            {/* Sync All button (Always visible) */}
+            <button
+              type="button"
+              onClick={onSyncAll}
+              disabled={isSyncing || isPulling}
+              title="ซิงก์ข้อมูล 2 ทาง: อัปโหลด PDF เข้า Drive + บันทึก Google Sheet และดึงข้อมูลล่าสุด"
+              className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-bold text-[11px] sm:text-xs transition shadow-xs border ${
+                pendingCount > 0
+                  ? 'text-amber-900 bg-amber-100 hover:bg-amber-200 border-amber-300 animate-pulse'
+                  : 'text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border-emerald-300'
+              }`}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-teal-700' : pendingCount > 0 ? 'text-amber-700' : 'text-emerald-600'}`} />
+              <span>
+                {isSyncing
+                  ? 'กำลังซิงก์...'
+                  : pendingCount > 0
+                  ? `ซิงก์ทั้งหมด (ค้างส่ง ${pendingCount})`
+                  : 'ซิงก์ทั้งหมด (Sync All)'}
               </span>
-            ) : (
-              <button
-                type="button"
-                onClick={onSyncAll}
-                disabled={isSyncing}
-                className="text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-0.5 rounded flex items-center gap-1 font-medium text-[11px] transition"
-              >
-                <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                รอส่งซิงก์ {pendingCount} รายการ
-              </button>
-            )}
+            </button>
           </div>
         )}
       </div>

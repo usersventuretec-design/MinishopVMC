@@ -302,12 +302,12 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({
                     type="button"
                     onClick={onPullFromSheet}
                     disabled={isPulling}
-                    title="ดึงข้อมูลประวัติการขายและลิงก์ไฟล์ PDF จาก Google Sheet เพื่อซิงก์ข้อมูลข้ามเครื่อง"
+                    title="ดึงข้อมูลประวัติการขายและลิงก์ไฟล์ PDF จาก Google Sheet เพื่อซิงก์ข้อมูลข้ามเครื่อง (สำหรับเครื่องใหม่)"
                     className="text-xs bg-[#007A87] hover:bg-[#00646e] text-white font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-xs transition"
                   >
                     <CloudDownload className={`w-3.5 h-3.5 ${isPulling ? 'animate-spin' : ''}`} />
-                    <span className="hidden sm:inline">ดึงข้อมูลจาก Google Sheet</span>
-                    <span className="sm:hidden">ดึงข้อมูล</span>
+                    <span className="hidden sm:inline">ดึงข้อมูลจาก Sheet (เครื่องใหม่)</span>
+                    <span className="sm:hidden">ดึงข้อมูล Sheet</span>
                   </button>
                 )}
 
@@ -315,12 +315,14 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({
                   type="button"
                   onClick={onSyncAllPending}
                   disabled={isSyncing}
-                  title="อัปโหลด PDF เข้าโฟลเดอร์แยกตามวันใน Drive และบันทึกลง Google Sheet"
+                  title="ซิงก์ข้อมูล 2 ทาง: อัปโหลด PDF เข้า Drive แยกตามวัน + บันทึกลง Google Sheet และดึงอัปเดตล่าสุด"
                   className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-xs transition"
                 >
-                  <CloudUpload className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">ซิงก์ส่งออก Drive ({pendingSyncCount})</span>
-                  <span className="sm:hidden">ส่งซิงก์ ({pendingSyncCount})</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">
+                    {pendingSyncCount > 0 ? `ซิงก์ทั้งหมด (ค้าง ${pendingSyncCount})` : 'ซิงก์ทั้งหมด (Sync All)'}
+                  </span>
+                  <span className="sm:hidden">ซิงก์ทั้งหมด</span>
                 </button>
               </>
             )}

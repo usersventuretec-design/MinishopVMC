@@ -29,7 +29,7 @@ import { CompanyInfo, CustomerInfo, PaymentMethod, PaymentStatus, Product, Recei
 import { formatCurrency, thaiBahtText } from '../utils/thaiBaht';
 import { getNextReceiptNumber } from '../services/storage';
 import { getProductDisplayImage, compressImageFile } from '../data/productImages';
-import { parseOrderWithAI } from '../services/aiService';
+import { parseOrderWithAI, getSmartUpsellWithAI, SmartUpsellResult } from '../services/aiService';
 
 interface ReceiptFormProps {
   products: Product[];
@@ -106,8 +106,14 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
 
   // Customer Autocomplete & History
   const [showCustomerDropdown, setShowCustomerDropdown] = useState<boolean>(false);
+  const [showPhoneDropdown, setShowPhoneDropdown] = useState<boolean>(false);
   const [showCustomerHistoryModal, setShowCustomerHistoryModal] = useState<boolean>(false);
   const [customerSearchKeyword, setCustomerSearchKeyword] = useState<string>('');
+  const [selectedCustomerMeta, setSelectedCustomerMeta] = useState<{ orderCount?: number; lastDate?: string } | null>(null);
+
+  // AI Smart Upsell State
+  const [aiUpsellData, setAiUpsellData] = useState<SmartUpsellResult | null>(null);
+  const [isLoadingAiUpsell, setIsLoadingAiUpsell] = useState<boolean>(false);
 
   // AI Order Parsing Modal
   const [showAiOrderModal, setShowAiOrderModal] = useState<boolean>(false);
@@ -137,21 +143,58 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
     return Array.from(map.values()).sort((a, b) => b.orderCount - a.orderCount);
   }, [receipts]);
 
-  // Filtered customer suggestions when typing
+  // Filtered customer suggestions when typing either Name or Phone Number
   const customerSuggestions = useMemo(() => {
-    const q = customer.name.trim().toLowerCase();
-    if (!q || q.length < 1) return [];
-    return pastCustomers
-      .filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          (c.phone && c.phone.includes(q)) ||
-          (c.company && c.company.toLowerCase().includes(q))
-      )
-      .slice(0, 5);
-  }, [pastCustomers, customer.name]);
+    const qName = customer.name.trim().toLowerCase();
+    const qPhone = customer.phone.replace(/[-\s]/g, '').trim();
+    if ((!qName || qName.length < 1) && (!qPhone || qPhone.length < 1)) return [];
 
-  const handleSelectCustomer = (c: CustomerInfo) => {
+    return pastCustomers
+      .filter((c) => {
+        const cPhoneClean = (c.phone || '').replace(/[-\s]/g, '');
+        const matchName = qName && (c.name.toLowerCase().includes(qName) || (c.company && c.company.toLowerCase().includes(qName)));
+        const matchPhone = qPhone && cPhoneClean.includes(qPhone);
+        return matchName || matchPhone;
+      })
+      .slice(0, 6);
+  }, [pastCustomers, customer.name, customer.phone]);
+
+  // Extract this customer's past purchased items from receipts
+  const customerPastPurchases = useMemo(() => {
+    if (!customer.name && !customer.phone) return [];
+    const searchPhone = (customer.phone || '').replace(/[-\s]/g, '');
+    const pastItemsMap = new Map<string, { product?: Product; description: string; count: number; lastPrice: number }>();
+
+    receipts.forEach((r) => {
+      const rPhone = (r.customer.phone || '').replace(/[-\s]/g, '');
+      const match =
+        (customer.name && customer.name.trim() !== 'ลูกค้าทั่วไป' && r.customer.name.trim().toLowerCase() === customer.name.trim().toLowerCase()) ||
+        (searchPhone && searchPhone.length >= 8 && rPhone.includes(searchPhone));
+      if (match) {
+        r.items.forEach((item) => {
+          const key = item.productId || item.description;
+          if (!pastItemsMap.has(key)) {
+            const prod = products.find(
+              (p) => p.id === item.productId || p.nameEn === item.description || p.nameTh === item.description
+            );
+            pastItemsMap.set(key, {
+              product: prod,
+              description: item.description,
+              count: item.quantity || 1,
+              lastPrice: item.unitPrice,
+            });
+          } else {
+            const entry = pastItemsMap.get(key)!;
+            entry.count += item.quantity || 1;
+          }
+        });
+      }
+    });
+
+    return Array.from(pastItemsMap.values()).sort((a, b) => b.count - a.count).slice(0, 6);
+  }, [receipts, customer.name, customer.phone, products]);
+
+  const handleSelectCustomer = (c: CustomerInfo & { orderCount?: number; lastDate?: string }) => {
     setCustomer({
       name: c.name || '',
       company: c.company || '',
@@ -161,8 +204,63 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
       fax: c.fax || '',
       taxId: c.taxId || '',
     });
+    setSelectedCustomerMeta({
+      orderCount: c.orderCount,
+      lastDate: c.lastDate,
+    });
     setShowCustomerDropdown(false);
+    setShowPhoneDropdown(false);
     setShowCustomerHistoryModal(false);
+    setAiUpsellData(null);
+  };
+
+  const handleClearSelectedCustomer = () => {
+    setCustomer({
+      name: '',
+      company: '',
+      address: '',
+      phone: '',
+      email: '',
+      fax: '',
+      taxId: '',
+    });
+    setSelectedCustomerMeta(null);
+    setAiUpsellData(null);
+  };
+
+  // AI Smart Upsell Handler
+  const handleTriggerAiUpsell = async () => {
+    setIsLoadingAiUpsell(true);
+    try {
+      const res = await getSmartUpsellWithAI({
+        customerName: customer.name || 'ลูกค้าทั่วไป',
+        customerPastItems: customerPastPurchases.map((p) => ({ name: p.description, count: p.count })),
+        currentCartItems: items.map((i) => ({ productId: i.productId, description: i.description })),
+        catalog: products,
+      });
+      setAiUpsellData(res);
+    } catch (e) {
+      console.warn('AI upsell error:', e);
+    } finally {
+      setIsLoadingAiUpsell(false);
+    }
+  };
+
+  // Quick Add Product from Past Purchases
+  const handleQuickAddPastItem = (itemEntry: { product?: Product; description: string; count: number; lastPrice: number }) => {
+    if (itemEntry.product) {
+      handleQuickAddProduct(itemEntry.product);
+    } else {
+      const newItem: ReceiptItem = {
+        id: 'item_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+        code: 'CUSTOM',
+        description: itemEntry.description,
+        quantity: 1,
+        unitPrice: itemEntry.lastPrice || 100,
+        amount: itemEntry.lastPrice || 100,
+      };
+      setItems((prev) => [...prev, newItem]);
+    }
   };
 
   const handleParseOrderWithAi = async () => {
@@ -709,17 +807,62 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
             />
           </div>
 
-          <div>
+          <div className="relative">
             <label className="block text-xs font-medium text-slate-700 mb-1">
-              เบอร์โทรศัพท์
+              เบอร์โทรศัพท์ (มีระบบจำเบอร์ลูกค้าเก่า)
             </label>
             <input
               type="text"
               placeholder="08X-XXX-XXXX"
               value={customer.phone}
-              onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}
-              className="w-full text-xs sm:text-sm border border-slate-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              onChange={(e) => {
+                setCustomer({ ...customer, phone: e.target.value });
+                setShowPhoneDropdown(true);
+              }}
+              onFocus={() => setShowPhoneDropdown(true)}
+              className="w-full text-xs sm:text-sm border border-slate-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-teal-500 focus:outline-none font-mono"
             />
+
+            {/* Autocomplete Dropdown on Phone Input */}
+            {showPhoneDropdown && customerSuggestions.length > 0 && (
+              <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-56 overflow-y-auto divide-y divide-slate-100 animate-in fade-in-50">
+                <div className="p-1.5 bg-slate-50 text-[10px] text-slate-500 font-semibold flex items-center justify-between">
+                  <span>เบอร์ลูกค้าเก่าที่ตรงกัน (คลิกเพื่อดึงข้อมูล)</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowPhoneDropdown(false)}
+                    className="text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                {customerSuggestions.map((c, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSelectCustomer(c)}
+                    className="w-full text-left p-2.5 hover:bg-teal-50/70 transition flex items-start justify-between gap-2"
+                  >
+                    <div>
+                      <div className="font-semibold text-xs text-slate-900 flex items-center gap-1.5">
+                        <span className="font-mono text-teal-700 font-bold">📞 {c.phone || '-'}</span>
+                        <span className="text-slate-700 font-normal">({c.name})</span>
+                      </div>
+                      {c.address && (
+                        <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                          {c.address}
+                        </p>
+                      )}
+                    </div>
+                    {c.orderCount && (
+                      <span className="text-[9px] bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                        {c.orderCount} บิล
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="sm:col-span-2 md:col-span-2">
@@ -747,6 +890,164 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
               className="w-full text-xs sm:text-sm border border-slate-300 rounded-lg px-3 py-2 bg-white font-mono focus:ring-2 focus:ring-teal-500 focus:outline-none"
             />
           </div>
+
+          {/* Selected Customer Recognized Status Banner */}
+          {customer.name && customer.name.trim() !== 'ลูกค้าทั่วไป' && (
+            <div className="sm:col-span-2 md:col-span-3 bg-teal-50/90 border border-teal-200/90 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-teal-700 text-white rounded-lg shadow-2xs">
+                  <UserCheck className="w-4 h-4" />
+                </span>
+                <div>
+                  <div className="font-bold text-teal-950 flex items-center gap-2">
+                    <span>ข้อมูลลูกค้า: {customer.name}</span>
+                    {customer.company && (
+                      <span className="text-[11px] text-teal-800 font-normal">
+                        ({customer.company})
+                      </span>
+                    )}
+                    {selectedCustomerMeta?.orderCount ? (
+                      <span className="text-[10px] bg-teal-200/80 text-teal-900 font-mono font-bold px-1.5 py-0.2 rounded-full">
+                        ซื้อแล้ว {selectedCustomerMeta.orderCount} ครั้ง
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-[11px] text-teal-700 mt-0.5">
+                    {customer.phone ? `โทร: ${customer.phone} • ` : ''}
+                    {customer.address ? `ส่ง: ${customer.address}` : 'ยังไม่มีที่อยู่จัดส่ง'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleClearSelectedCustomer}
+                  className="text-[11px] text-slate-600 hover:text-red-600 bg-white hover:bg-red-50 border border-slate-200 px-2 py-1 rounded-lg flex items-center gap-1 transition"
+                  title="ล้างข้อมูลลูกค้าเพื่อกรอกคนใหม่"
+                >
+                  <X className="w-3 h-3" />
+                  <span>เปลี่ยนลูกค้า</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Customer's Past Frequent Purchased Items Shelf */}
+          {customerPastPurchases.length > 0 && (
+            <div className="sm:col-span-2 md:col-span-3 bg-white p-3 rounded-xl border border-slate-200 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <ShoppingBag className="w-3.5 h-3.5 text-teal-600" />
+                  สินค้าที่ลูกค้าท่านนี้เคยสั่งซื้อในอดีต (แตะเพื่อสั่งซ้ำได้ทันที)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleTriggerAiUpsell}
+                  disabled={isLoadingAiUpsell}
+                  className="text-[11px] bg-gradient-to-r from-teal-700 to-emerald-700 hover:from-teal-800 hover:to-emerald-800 text-white font-medium px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs transition"
+                  title="ให้ AI วิเคราะห์ประวัติและเสนอสินค้าที่ควรเสนอขายเสริม"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-300" />
+                  <span>{isLoadingAiUpsell ? 'AI กำลังวิเคราะห์...' : '✨ AI แนะนำสินค้าเสริม (Upsell)'}</span>
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {customerPastPurchases.map((item, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleQuickAddPastItem(item)}
+                    className="text-xs bg-slate-50 hover:bg-teal-50 border border-slate-200 hover:border-teal-300 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 transition text-slate-800 group shadow-2xs"
+                    title={`แตะเพื่อเพิ่ม "${item.description}" ลงในใบเสร็จ`}
+                  >
+                    <Plus className="w-3 h-3 text-teal-600 group-hover:scale-125 transition" />
+                    <span className="font-medium text-[11px]">{item.description}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">({item.count} ครั้ง)</span>
+                    <span className="text-[11px] text-teal-700 font-bold font-mono">
+                      ฿{formatCurrency(item.lastPrice)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AI Smart Upsell Recommendations Card */}
+          {aiUpsellData && (
+            <div className="sm:col-span-2 md:col-span-3 bg-gradient-to-r from-teal-50 via-emerald-50/50 to-white p-3.5 rounded-xl border border-teal-300 text-xs space-y-2.5 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-bold text-teal-950">
+                  <Sparkles className="w-4 h-4 text-teal-700" />
+                  <span>AI แนะนำสินค้าเสริมและประโยคเสนอขายสำหรับ {customer.name || 'ลูกค้ารายนี้'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAiUpsellData(null)}
+                  className="text-slate-400 hover:text-slate-600 p-0.5"
+                  title="ปิดคำแนะนำ"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {aiUpsellData.customerNote && (
+                <p className="text-[11px] text-teal-900 font-medium bg-white/80 p-2 rounded-lg border border-teal-100">
+                  💡 {aiUpsellData.customerNote}
+                </p>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                {aiUpsellData.recommendations.map((rec, idx) => {
+                  const catalogProd = products.find(
+                    (p) => p.id === rec.productId || p.nameTh === rec.name || p.nameEn === rec.name
+                  );
+                  return (
+                    <div
+                      key={idx}
+                      className="bg-white p-3 rounded-xl border border-teal-200/90 shadow-2xs flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-900 text-xs flex items-center justify-between">
+                          <span className="truncate" title={rec.name}>{rec.name}</span>
+                          {catalogProd && (
+                            <span className="font-mono text-teal-700 font-bold shrink-0 ml-1">
+                              ฿{catalogProd.price}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-1">{rec.reason}</p>
+                        {rec.pitch && (
+                          <p className="text-[10px] text-teal-900 bg-teal-50/80 p-1.5 rounded-lg mt-1.5 italic border border-teal-100">
+                            💬 "{rec.pitch}"
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (catalogProd) {
+                            handleQuickAddProduct(catalogProd);
+                          } else {
+                            const newItem: ReceiptItem = {
+                              id: 'item_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+                              code: 'AI_REC',
+                              description: rec.name,
+                              quantity: 1,
+                              unitPrice: 100,
+                              amount: 100,
+                            };
+                            setItems((prev) => [...prev, newItem]);
+                          }
+                        }}
+                        className="mt-2.5 w-full bg-teal-700 hover:bg-teal-800 text-white text-[11px] font-semibold py-1.5 rounded-lg flex items-center justify-center gap-1 transition shadow-2xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> เพิ่มลงบิลทันที
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

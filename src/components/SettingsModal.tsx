@@ -1,15 +1,38 @@
 import React, { useState } from 'react';
 import { CompanyInfo } from '../types';
 import { RunningConfig } from '../services/storage';
-import { Building2, Hash, Save, X, ExternalLink } from 'lucide-react';
-import { SPREADSHEET_URL, TARGET_SPREADSHEET_ID } from '../services/googleSheets';
-import { DRIVE_FOLDER_URL, TARGET_FOLDER_ID } from '../services/googleDrive';
+import { DEFAULT_COMPANY_INFO } from '../data/defaultProducts';
+import {
+  Building2,
+  Hash,
+  Save,
+  X,
+  ExternalLink,
+  RotateCcw,
+  FileSpreadsheet,
+  FolderSync,
+  KeyRound,
+  CheckCircle2,
+} from 'lucide-react';
+import {
+  DEFAULT_TARGET_SPREADSHEET_ID,
+  getTargetSpreadsheetId,
+  setTargetSpreadsheetId,
+  getSpreadsheetUrl,
+} from '../services/googleSheets';
+import {
+  DEFAULT_TARGET_FOLDER_ID,
+  getTargetFolderId,
+  setTargetFolderId,
+  getDriveFolderUrl,
+} from '../services/googleDrive';
 
 interface SettingsModalProps {
   companyInfo: CompanyInfo;
   runningConfig: RunningConfig;
   onSaveCompany: (info: CompanyInfo) => void;
   onSaveRunning: (config: RunningConfig) => void;
+  onSaveWorkspace?: (sheetId: string, folderId: string) => void;
   onClose: () => void;
 }
 
@@ -18,23 +41,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   runningConfig,
   onSaveCompany,
   onSaveRunning,
+  onSaveWorkspace,
   onClose,
 }) => {
   const [info, setInfo] = useState<CompanyInfo>({ ...companyInfo });
   const [config, setConfig] = useState<RunningConfig>({ ...runningConfig });
+  const [sheetId, setSheetId] = useState<string>(getTargetSpreadsheetId());
+  const [folderId, setFolderId] = useState<string>(getTargetFolderId());
+  const [resetSuccess, setResetSuccess] = useState<boolean>(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     onSaveCompany(info);
     onSaveRunning(config);
+    setTargetSpreadsheetId(sheetId);
+    setTargetFolderId(folderId);
+    if (onSaveWorkspace) {
+      onSaveWorkspace(sheetId, folderId);
+    }
     onClose();
+  };
+
+  const handleResetAllToDefaults = () => {
+    if (window.confirm('คุณต้องการรีเซ็ตการตั้งค่าทั้งหมดกลับเป็นค่าเริ่มต้นเดิมของระบบใช่หรือไม่?')) {
+      setInfo({ ...DEFAULT_COMPANY_INFO });
+      setConfig({
+        prefix: 'MS',
+        yearFormat: 'YYYY',
+        digits: 4,
+        lastNumber: 0,
+      });
+      setSheetId(DEFAULT_TARGET_SPREADSHEET_ID);
+      setFolderId(DEFAULT_TARGET_FOLDER_ID);
+      setResetSuccess(true);
+      setTimeout(() => setResetSuccess(false), 3000);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <form
         onSubmit={handleSave}
-        className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95"
+        className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 my-8"
       >
         <div className="p-4 bg-[#007A87] text-white flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -44,13 +92,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded-full bg-teal-900/50 hover:bg-teal-900 flex items-center justify-center"
+            className="w-7 h-7 rounded-full bg-teal-900/50 hover:bg-teal-900 flex items-center justify-center transition"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-6 space-y-5 text-xs max-h-[80vh] overflow-y-auto">
+        <div className="p-6 space-y-5 text-xs max-h-[75vh] overflow-y-auto">
+          {resetSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 flex items-center gap-2 font-medium">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>คืนค่าการตั้งค่าเริ่มต้นเดิมของระบบทั้งหมดเรียบร้อยแล้ว (กดบันทึกเพื่อยืนยัน)</span>
+            </div>
+          )}
+
           {/* Running number settings */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
             <h4 className="font-bold text-slate-800 flex items-center gap-1.5 text-sm">
@@ -66,7 +121,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={config.prefix}
                   onChange={(e) => setConfig({ ...config, prefix: e.target.value.toUpperCase() })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono uppercase"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono uppercase bg-white"
                 />
               </div>
 
@@ -80,7 +135,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   max="6"
                   value={config.digits}
                   onChange={(e) => setConfig({ ...config, digits: parseInt(e.target.value, 10) || 4 })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono bg-white"
                 />
               </div>
 
@@ -93,7 +148,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   min="0"
                   value={config.lastNumber}
                   onChange={(e) => setConfig({ ...config, lastNumber: parseInt(e.target.value, 10) || 0 })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono bg-white"
                 />
               </div>
             </div>
@@ -117,7 +172,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={info.name}
                   onChange={(e) => setInfo({ ...info, name: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
 
@@ -127,7 +182,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={info.address}
                   onChange={(e) => setInfo({ ...info, address: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
 
@@ -137,7 +192,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={info.postalCode}
                   onChange={(e) => setInfo({ ...info, postalCode: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono bg-white"
                 />
               </div>
 
@@ -149,7 +204,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={info.taxId}
                   onChange={(e) => setInfo({ ...info, taxId: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono bg-white"
                 />
               </div>
 
@@ -159,7 +214,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={info.phone}
                   onChange={(e) => setInfo({ ...info, phone: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
 
@@ -169,7 +224,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={info.fax}
                   onChange={(e) => setInfo({ ...info, fax: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
 
@@ -179,7 +234,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="email"
                   value={info.email}
                   onChange={(e) => setInfo({ ...info, email: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
 
@@ -189,7 +244,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={info.website}
                   onChange={(e) => setInfo({ ...info, website: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
 
@@ -199,7 +254,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={info.bankAccount}
                   onChange={(e) => setInfo({ ...info, bankAccount: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono font-bold"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono font-bold bg-white"
                 />
               </div>
 
@@ -209,55 +264,145 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   type="text"
                   value={info.bankName}
                   onChange={(e) => setInfo({ ...info, bankName: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
             </div>
           </div>
 
-          {/* Connected Google Links */}
-          <div className="p-3 bg-teal-50/60 border border-teal-200 rounded-xl space-y-1 text-slate-700">
-            <h5 className="font-bold text-teal-900">การเชื่อมต่อ Google Workspace</h5>
-            <p className="text-[11px] text-slate-600">
-              • Google Drive Folder ID:{' '}
-              <a
-                href={DRIVE_FOLDER_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-teal-700 underline"
-              >
-                {TARGET_FOLDER_ID}
-              </a>
-            </p>
-            <p className="text-[11px] text-slate-600">
-              • Google Sheet ID:{' '}
-              <a
-                href={SPREADSHEET_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-teal-700 underline"
-              >
-                {TARGET_SPREADSHEET_ID}
-              </a>
-            </p>
+          {/* Connected Google Links & ID Configuration */}
+          <div className="p-4 bg-teal-50/70 border border-teal-200 rounded-xl space-y-4 text-slate-700">
+            <div className="flex items-center justify-between">
+              <h5 className="font-bold text-teal-900 text-sm flex items-center gap-1.5">
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                การเชื่อมต่อ Google Workspace & ID หลัก
+              </h5>
+              <span className="text-[10px] text-teal-700 bg-teal-100/70 px-2 py-0.5 rounded font-medium">
+                รองรับการเปลี่ยนเป็น ID หลัก
+              </span>
+            </div>
+
+            {/* Google Sheet ID input */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="font-medium text-slate-700 flex items-center gap-1">
+                  <span>Google Sheet ID (ตารางบันทึกการขาย):</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  {sheetId !== DEFAULT_TARGET_SPREADSHEET_ID && (
+                    <button
+                      type="button"
+                      onClick={() => setSheetId(DEFAULT_TARGET_SPREADSHEET_ID)}
+                      className="text-[10px] text-teal-700 hover:text-teal-900 underline flex items-center gap-0.5"
+                      title="คืนค่าเป็น ID เริ่มต้นเดิม"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" /> คืนค่าเดิม
+                    </button>
+                  )}
+                  <a
+                    href={getSpreadsheetUrl(sheetId)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-teal-700 hover:text-teal-900 flex items-center gap-0.5 text-[11px] underline"
+                  >
+                    เปิด Sheet <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+              <input
+                type="text"
+                value={sheetId}
+                onChange={(e) => setSheetId(e.target.value.trim())}
+                placeholder="ระบุ Google Spreadsheet ID เช่น 1SDuEa3IZapuQtnHUH9QGxA8kjfz4JlpyiX0BtnTr24o"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-[11px] bg-white text-slate-800"
+              />
+              <p className="text-[10px] text-slate-500">
+                ค่าเริ่มต้นเดิม: <span className="font-mono text-slate-600">{DEFAULT_TARGET_SPREADSHEET_ID}</span>
+              </p>
+            </div>
+
+            {/* Google Drive Folder ID input */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="font-medium text-slate-700 flex items-center gap-1">
+                  <span>Google Drive Folder ID (โฟลเดอร์เก็บ PDF):</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  {folderId !== DEFAULT_TARGET_FOLDER_ID && (
+                    <button
+                      type="button"
+                      onClick={() => setFolderId(DEFAULT_TARGET_FOLDER_ID)}
+                      className="text-[10px] text-blue-700 hover:text-blue-900 underline flex items-center gap-0.5"
+                      title="คืนค่าเป็น ID เริ่มต้นเดิม"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" /> คืนค่าเดิม
+                    </button>
+                  )}
+                  <a
+                    href={getDriveFolderUrl(folderId)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-700 hover:text-blue-900 flex items-center gap-0.5 text-[11px] underline"
+                  >
+                    เปิด Drive <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+              <input
+                type="text"
+                value={folderId}
+                onChange={(e) => setFolderId(e.target.value.trim())}
+                placeholder="ระบุ Google Drive Folder ID เช่น 1vDmg8E2TWD67uvmN-mtz9VT84EQqBNbD"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 font-mono text-[11px] bg-white text-slate-800"
+              />
+              <p className="text-[10px] text-slate-500">
+                ค่าเริ่มต้นเดิม: <span className="font-mono text-slate-600">{DEFAULT_TARGET_FOLDER_ID}</span>
+              </p>
+            </div>
+
+            {/* Main Firebase Project Reference Notice */}
+            <div className="p-2.5 bg-white/80 border border-teal-100 rounded-lg text-[11px] text-slate-600 space-y-1">
+              <div className="font-medium text-slate-800 flex items-center gap-1">
+                <KeyRound className="w-3.5 h-3.5 text-teal-700" />
+                <span>สำหรับนำไปเชื่อมต่อ ID หลัก / Firebase หลัก:</span>
+              </div>
+              <p>
+                • การตั้งค่า Firebase & Google OAuth บันทึกอยู่ที่ไฟล์ <code className="bg-slate-100 px-1 py-0.5 rounded text-teal-800 font-mono">firebase-applet-config.json</code>
+              </p>
+              <p>
+                • หากต้องการผูกกับ Google Cloud / Firebase หลักของคุณ สามารถแก้ไขไฟล์ดังกล่าว หรือใส่ Google Sheet ID / Drive Folder ID ของคุณข้างต้นได้โดยตรง
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 text-xs">
+        <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
           <button
             type="button"
-            onClick={onClose}
-            className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 font-medium text-slate-700"
+            onClick={handleResetAllToDefaults}
+            className="px-3 py-2 border border-rose-200 bg-rose-50/50 hover:bg-rose-100 text-rose-700 rounded-lg font-medium flex items-center gap-1.5 transition"
+            title="คืนค่าการตั้งค่าทั้งหมดกลับเป็นค่าเริ่มต้นเดิมของโครงการ"
           >
-            ยกเลิก
+            <RotateCcw className="w-3.5 h-3.5" />
+            คืนค่าเดิมทั้งหมด
           </button>
-          <button
-            type="submit"
-            className="px-5 py-2 bg-[#007A87] hover:bg-[#00646e] text-white rounded-lg font-medium flex items-center gap-1.5 shadow-xs"
-          >
-            <Save className="w-3.5 h-3.5" />
-            บันทึกการตั้งค่า
-          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 font-medium text-slate-700 transition"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 bg-[#007A87] hover:bg-[#00646e] text-white rounded-lg font-medium flex items-center gap-1.5 shadow-xs transition"
+            >
+              <Save className="w-3.5 h-3.5" />
+              บันทึกการตั้งค่า
+            </button>
+          </div>
         </div>
       </form>
     </div>

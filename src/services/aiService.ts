@@ -188,3 +188,97 @@ export async function getSalesInsightsWithAI(summaryData: any): Promise<string> 
 1. **จัดเซ็ตคู่สินค้ายอดนิยม:** นำสินค้าขายดีอันดับ 1 จับคู่กับน้ำสลัดหรือบะหมี่ เพื่อดันยอดต่อบิล (Basket Size) ให้เกิน 500 บาท
 2. **โปรโมทช่องทางพร้อมเพย์:** เพื่อเพิ่มความสะดวกให้ลูกค้าสแกนจ่ายได้รวดเร็วหน้าร้าน`;
 }
+
+export interface SmartUpsellResult {
+  customerNote: string;
+  recommendations: {
+    productId: string;
+    name: string;
+    reason: string;
+    pitch: string;
+  }[];
+}
+
+/**
+ * Get AI Smart Re-order and Upsell recommendations
+ */
+export async function getSmartUpsellWithAI(params: {
+  customerName: string;
+  customerPastItems: any[];
+  currentCartItems: any[];
+  catalog: Product[];
+}): Promise<SmartUpsellResult | null> {
+  try {
+    const res = await fetch('/api/ai/smart-upsell', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.recommendations) && data.recommendations.length > 0) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('AI smart upsell server call failed:', err);
+  }
+
+  // Graceful heuristic fallback if server is offline or no API key
+  const availableRecs = params.catalog
+    .filter((c) => !params.currentCartItems.some((ci) => ci.productId === c.id))
+    .slice(0, 2);
+
+  if (availableRecs.length > 0) {
+    return {
+      customerNote: 'แนะนำสินค้าดาวเด่นประจำร้าน WASABI-O สำหรับเสริมยอดบิล',
+      recommendations: availableRecs.map((prod) => ({
+        productId: prod.id,
+        name: prod.nameTh,
+        reason: `สินค้าขายดีขนาด ${prod.size} ราคาเพียง ฿${prod.price}`,
+        pitch: `รับ ${prod.nameTh} เพิ่มด้วยไหมคะ สินค้าคุณภาพแท้จากญี่ปุ่น`,
+      })),
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Request AI Daily Shift Closing Report (formatted for LINE)
+ */
+export async function getDailyShiftReportWithAI(date: string, shiftData: any): Promise<string> {
+  try {
+    const res = await fetch('/api/ai/daily-shift-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, shiftData }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.report) return data.report;
+    }
+  } catch (err) {
+    console.warn('AI shift report call failed:', err);
+  }
+
+  // Local fallback LINE report template
+  return `📊 สรุปยอดขายประจำวัน (Daily Shift Closing)
+📅 วันที่: ${date}
+🏢 ร้านค้า: Venturetec Mini Shop (WASABI-O)
+
+💰 สรุปยอดเงินปิดกะ:
+- 💵 ยอดเงินสดในเก๊ะ: ฿${(shiftData.cashTotal || 0).toLocaleString()} (${shiftData.cashCount || 0} บิล)
+- 💳 โอนเข้าบัญชีกรุงศรี: ฿${(shiftData.transferTotal || 0).toLocaleString()} (${shiftData.transferCount || 0} บิล)
+- 📱 พร้อมเพย์ QR: ฿${(shiftData.promptpayTotal || 0).toLocaleString()} (${shiftData.promptpayCount || 0} บิล)
+- 💳 บัตรเครดิต: ฿${(shiftData.cardTotal || 0).toLocaleString()} (${shiftData.cardCount || 0} บิล)
+👉 ยอดขายรวมสุทธิ: ฿${(shiftData.totalRevenue || 0).toLocaleString()} (ทั้งหมด ${shiftData.totalReceipts || 0} บิล)
+
+🏆 สินค้าขายดีวันนี้:
+${(shiftData.topProducts || []).map((p: any, i: number) => `${i + 1}. ${p.name} (${p.qty} ชิ้น)`).join('\n') || '- ไม่มีรายการขาย'}
+
+✅ ตรวจสอบเงินสดและสลิปการโอนเรียบร้อย ปิดกะประจำวันสมบูรณ์`;
+}
+

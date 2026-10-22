@@ -1,5 +1,28 @@
-export const TARGET_FOLDER_ID = '1vDmg8E2TWD67uvmN-mtz9VT84EQqBNbD';
-export const DRIVE_FOLDER_URL = `https://drive.google.com/drive/folders/${TARGET_FOLDER_ID}`;
+export const DEFAULT_TARGET_FOLDER_ID = '1vDmg8E2TWD67uvmN-mtz9VT84EQqBNbD';
+
+export function getTargetFolderId(): string {
+  try {
+    const custom = localStorage.getItem('venturetec_custom_folder_id');
+    return custom && custom.trim() ? custom.trim() : DEFAULT_TARGET_FOLDER_ID;
+  } catch {
+    return DEFAULT_TARGET_FOLDER_ID;
+  }
+}
+
+export function setTargetFolderId(id: string): void {
+  try {
+    if (!id || !id.trim() || id.trim() === DEFAULT_TARGET_FOLDER_ID) {
+      localStorage.removeItem('venturetec_custom_folder_id');
+    } else {
+      localStorage.setItem('venturetec_custom_folder_id', id.trim());
+    }
+  } catch {}
+}
+
+export const TARGET_FOLDER_ID = DEFAULT_TARGET_FOLDER_ID;
+export const getDriveFolderUrl = (id?: string) =>
+  `https://drive.google.com/drive/folders/${id || getTargetFolderId()}`;
+export const DRIVE_FOLDER_URL = getDriveFolderUrl();
 
 export interface UploadResult {
   fileId: string;
@@ -70,7 +93,7 @@ async function getOrCreateRootMasterFolder(
 export async function getOrCreateDateFolder(
   dateStr: string,
   accessToken: string,
-  parentFolderId: string = TARGET_FOLDER_ID
+  parentFolderId: string = getTargetFolderId()
 ): Promise<string> {
   const folderName = dateStr || new Date().toISOString().split('T')[0];
   const cacheKey = `${parentFolderId}_${folderName}`;
@@ -146,7 +169,7 @@ export async function uploadReceiptPdfToDrive(
   filename: string,
   accessToken: string,
   dateStr?: string,
-  parentFolderId: string = TARGET_FOLDER_ID
+  parentFolderId: string = getTargetFolderId()
 ): Promise<UploadResult> {
   if (!accessToken) {
     throw new Error('กรุณาเข้าสู่ระบบ Google Workspace ก่อนอัปโหลดไฟล์');
@@ -262,7 +285,7 @@ export async function uploadReceiptPdfToDrive(
  */
 export async function getOrCreateProductImagesFolder(
   accessToken: string,
-  parentFolderId: string = TARGET_FOLDER_ID
+  parentFolderId: string = getTargetFolderId()
 ): Promise<string> {
   const folderName = 'WASABI-O Product Images';
   const cacheKey = `${parentFolderId}_product_images`;
@@ -331,7 +354,7 @@ export async function uploadProductImageToDrive(
   imageSource: Blob | File | string,
   filename: string,
   accessToken: string,
-  parentFolderId: string = TARGET_FOLDER_ID
+  parentFolderId: string = getTargetFolderId()
 ): Promise<{ fileId: string; webViewLink: string; directLink: string }> {
   if (!accessToken) {
     throw new Error('กรุณาเข้าสู่ระบบ Google เพื่อบันทึกรูปภาพลง Google Drive');

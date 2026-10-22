@@ -33,16 +33,22 @@ import {
 import {
   initAuth,
   googleSignIn,
+  signInWithGoogleGIS,
   logout as authLogout,
   getAccessToken,
+  setAccessTokenManually,
 } from './services/firebaseAuth';
 import {
   appendReceiptToGoogleSheet,
   pullReceiptsFromGoogleSheet,
-  TARGET_SPREADSHEET_ID,
-  SPREADSHEET_URL,
+  getTargetSpreadsheetId,
+  getSpreadsheetUrl,
 } from './services/googleSheets';
-import { uploadReceiptPdfToDrive, TARGET_FOLDER_ID, DRIVE_FOLDER_URL } from './services/googleDrive';
+import {
+  uploadReceiptPdfToDrive,
+  getTargetFolderId,
+  getDriveFolderUrl,
+} from './services/googleDrive';
 import { generateReceiptPdfBlob } from './utils/pdfGenerator';
 import { GoogleWorkspaceBar } from './components/GoogleWorkspaceBar';
 import { ReceiptForm } from './components/ReceiptForm';
@@ -52,6 +58,7 @@ import { SalesHistory } from './components/SalesHistory';
 import { SalesDashboard } from './components/SalesDashboard';
 import { ProductMaster } from './components/ProductMaster';
 import { SettingsModal } from './components/SettingsModal';
+import { UnauthorizedDomainModal } from './components/UnauthorizedDomainModal';
 
 type ActiveTab = 'new-receipt' | 'history' | 'dashboard' | 'products' | 'workflow';
 
@@ -66,6 +73,7 @@ export default function App() {
   const [activeReceiptForModal, setActiveReceiptForModal] = useState<Receipt | null>(null);
   const [editingReceiptForForm, setEditingReceiptForForm] = useState<Receipt | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDomainModal, setShowDomainModal] = useState(false);
 
   // Background receipt for PDF generation
   const [backgroundReceipt, setBackgroundReceipt] = useState<Receipt | null>(null);
@@ -147,7 +155,7 @@ export default function App() {
         showNotify('info', 'กำลังดึงข้อมูลประวัติการขายและลิงก์ไฟล์ PDF จาก Google Sheet...');
       }
 
-      const remoteReceipts = await pullReceiptsFromGoogleSheet(token, TARGET_SPREADSHEET_ID);
+      const remoteReceipts = await pullReceiptsFromGoogleSheet(token, getTargetSpreadsheetId());
       if (remoteReceipts.length === 0) {
         if (!silent) {
           showNotify('info', 'ยังไม่มีรายการข้อมูลใน Google Sheet');
@@ -204,8 +212,35 @@ export default function App() {
         handlePullFromGoogleSheet(res.accessToken, false);
       }
     } catch (err: any) {
-      console.error('Login error:', err);
-      showNotify('error', 'การเข้าสู่ระบบ Google ขัดข้อง กรุณาลองใหม่อีกครั้ง');
+      if (
+        err?.code === 'auth/unauthorized-domain' ||
+        err?.message === 'DOMAIN_UNAUTHORIZED' ||
+        String(err?.message || '').includes('unauthorized-domain')
+      ) {
+        setShowDomainModal(true);
+        showNotify('info', 'กรุณาเพิ่มชื่อโดเมนใน Firebase Console หรือเข้าสู่ระบบตรง');
+      } else {
+        console.error('Login error:', err);
+        showNotify('error', `การเข้าสู่ระบบ Google ขัดข้อง: ${err?.message || 'กรุณาลองใหม่อีกครั้ง'}`);
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleDirectGisSignIn = async () => {
+    try {
+      setIsLoggingIn(true);
+      const res = await signInWithGoogleGIS();
+      if (res) {
+        setGoogleUser(res.user);
+        setGoogleAccessToken(res.accessToken);
+        showNotify('success', `ยินดีต้อนรับ ${res.user.displayName || res.user.email} เข้าสู่ระบบสำเร็จ!`);
+        handlePullFromGoogleSheet(res.accessToken, false);
+      }
+    } catch (err: any) {
+      console.warn('Direct GIS sign-in status:', err?.message || err);
+      showNotify('info', `การเข้าสู่ระบบ Google: ${err?.message || 'ยกเลิกหรือยังไม่เสร็จสิ้น'}`);
     } finally {
       setIsLoggingIn(false);
     }
@@ -258,7 +293,7 @@ export default function App() {
             filename,
             token,
             created.date,
-            TARGET_FOLDER_ID
+            getTargetFolderId()
           );
 
           // Update receipt with drive links
@@ -268,7 +303,7 @@ export default function App() {
           }) || { ...created, driveFileId: driveResult.fileId, driveViewLink: driveResult.webViewLink };
 
           // Record to Google Sheet with Drive link (formatted as HYPERLINK)
-          await appendReceiptToGoogleSheet(updated, token, TARGET_SPREADSHEET_ID, driveResult.webViewLink);
+          await appendReceiptToGoogleSheet(updated, token, getTargetSpreadsheetId(), driveResult.webViewLink);
           const finalReceipt = updateReceipt(created.id, { syncedToSheet: true }) || updated;
           created = finalReceipt;
           setReceipts(getReceipts());
@@ -307,14 +342,14 @@ export default function App() {
       showNotify('info', `กำลังสร้าง PDF และอัปโหลดเข้าโฟลเดอร์ "${receipt.date}" ใน Google Drive...`);
       const blob = await generatePdfFor(receipt);
       const filename = `Receipt_${receipt.receiptNo}_${receipt.customer.name.replace(/\s+/g, '_')}.pdf`;
-      const driveRes = await uploadReceiptPdfToDrive(blob, filename, token, receipt.date, TARGET_FOLDER_ID);
+      const driveRes = await uploadReceiptPdfToDrive(blob, filename, token, receipt.date, getTargetFolderId());
 
       const updated = updateReceipt(receipt.id, {
         driveFileId: driveRes.fileId,
         driveViewLink: driveRes.webViewLink,
       }) || { ...receipt, driveFileId: driveRes.fileId, driveViewLink: driveRes.webViewLink };
 
-      await appendReceiptToGoogleSheet(updated, token, TARGET_SPREADSHEET_ID, driveRes.webViewLink);
+      await appendReceiptToGoogleSheet(updated, token, getTargetSpreadsheetId(), driveRes.webViewLink);
       updateReceipt(receipt.id, { syncedToSheet: true });
       setReceipts(getReceipts());
 
@@ -341,7 +376,7 @@ export default function App() {
 
     try {
       setIsSyncing(true);
-      await appendReceiptToGoogleSheet(receipt, token, TARGET_SPREADSHEET_ID, receipt.driveViewLink);
+      await appendReceiptToGoogleSheet(receipt, token, getTargetSpreadsheetId(), receipt.driveViewLink);
       const updated = updateReceipt(receipt.id, { syncedToSheet: true });
       if (updated) setReceipts(getReceipts());
       showNotify('success', `ซิงก์ใบเสร็จ ${receipt.receiptNo} ไปยัง Google Sheet สำเร็จ!`);
@@ -381,7 +416,7 @@ export default function App() {
           try {
             const blob = await generatePdfFor(r);
             const filename = `Receipt_${r.receiptNo}_${r.customer.name.replace(/\s+/g, '_')}.pdf`;
-            const driveRes = await uploadReceiptPdfToDrive(blob, filename, token, r.date, TARGET_FOLDER_ID);
+            const driveRes = await uploadReceiptPdfToDrive(blob, filename, token, r.date, getTargetFolderId());
             drivePdfLink = driveRes.webViewLink;
             currentRecord = updateReceipt(r.id, {
               driveFileId: driveRes.fileId,
@@ -393,7 +428,7 @@ export default function App() {
         }
 
         // Now append or update in Google Sheet with the Drive link
-        await appendReceiptToGoogleSheet(currentRecord, token, TARGET_SPREADSHEET_ID, drivePdfLink || currentRecord.driveViewLink);
+        await appendReceiptToGoogleSheet(currentRecord, token, getTargetSpreadsheetId(), drivePdfLink || currentRecord.driveViewLink);
         updateReceipt(r.id, { syncedToSheet: true });
 
         successCount++;
@@ -544,7 +579,7 @@ export default function App() {
                     <div className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title={`เชื่อมต่อ Google: ${googleUser.email || googleUser.displayName}`}></span>
                       <a
-                        href={SPREADSHEET_URL}
+                        href={getSpreadsheetUrl()}
                         target="_blank"
                         rel="noreferrer"
                         title="เปิด Google Sheet บันทึกการขาย"
@@ -553,7 +588,7 @@ export default function App() {
                         <FileSpreadsheet className="w-3.5 h-3.5" />
                       </a>
                       <a
-                        href={DRIVE_FOLDER_URL}
+                        href={getDriveFolderUrl()}
                         target="_blank"
                         rel="noreferrer"
                         title="เปิดโฟลเดอร์ Google Drive"
@@ -886,7 +921,7 @@ export default function App() {
                       บันทึกรายการขาย เลขที่ใบเสร็จ ยอดเงิน ภาษี ลิงก์ PDF และสถานะการชำระเงินลงชีตกลาง
                     </p>
                     <a
-                      href="https://docs.google.com/spreadsheets/d/1SDuEa3IZapuQtnHUH9QGxA8kjfz4JlpyiX0BtnTr24o/edit?usp=drivesdk"
+                      href={getSpreadsheetUrl()}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 text-teal-700 font-bold mt-2 hover:underline"
@@ -904,7 +939,7 @@ export default function App() {
                       สร้างโฟลเดอร์ย่อยตามวันที่ (เช่น 2026-10-21) ภายในไดรฟ์หลักโดยอัตโนมัติ เพื่อให้ค้นหาไฟล์ใบเสร็จ PDF ในแต่ละวันได้สะดวก รวดเร็ว
                     </p>
                     <a
-                      href="https://drive.google.com/drive/folders/1vDmg8E2TWD67uvmN-mtz9VT84EQqBNbD"
+                      href={getDriveFolderUrl()}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 text-teal-700 font-bold mt-2 hover:underline"
@@ -958,9 +993,33 @@ export default function App() {
           runningConfig={runningConfig}
           onSaveCompany={handleSaveCompany}
           onSaveRunning={handleSaveRunning}
+          onSaveWorkspace={() => {
+            showNotify('success', 'บันทึกการตั้งค่า Google Workspace เรียบร้อย');
+          }}
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {/* Unauthorized Domain Guide Modal */}
+      <UnauthorizedDomainModal
+        isOpen={showDomainModal}
+        onClose={() => setShowDomainModal(false)}
+        onRetry={handleGoogleSignIn}
+        onDirectGisLogin={handleDirectGisSignIn}
+        onSetManualToken={(tok) => {
+          setAccessTokenManually(tok, {
+            displayName: 'Google Authorized User',
+            email: 'connected@workspace',
+          });
+          setGoogleAccessToken(tok);
+          setGoogleUser({
+            displayName: 'Google Authorized User',
+            email: 'connected@workspace',
+          });
+          showNotify('success', 'เชื่อมต่อ Google Access Token สำเร็จ!');
+          handlePullFromGoogleSheet(tok, false);
+        }}
+      />
     </div>
   );
 }

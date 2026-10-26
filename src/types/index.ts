@@ -77,4 +77,5 @@ export interface CompanyInfo {
   bankAccount: string;
   bankName: string;
   accountName: string;
+  logoUrl?: string;
 }

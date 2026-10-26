@@ -1,3 +1,5 @@
+import { Product } from '../types';
+
 export const DEFAULT_TARGET_FOLDER_ID = '1vDmg8E2TWD67uvmN-mtz9VT84EQqBNbD';
 
 export function getTargetFolderId(): string {
@@ -478,5 +480,158 @@ export async function uploadProductImageToDrive(
       }
     }
     throw err;
+  }
+}
+
+/**
+ * Backup product master list as JSON to Google Drive
+ */
+export async function backupProductsToDrive(products: Product[], accessToken: string): Promise<void> {
+  if (!accessToken) return;
+  try {
+    const parentFolderId = getTargetFolderId();
+    const productFolder = await getOrCreateProductImagesFolder(accessToken, parentFolderId);
+    
+    const query = `'${productFolder}' in parents and name = 'wasabi_products_master.json' and trashed = false`;
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+    
+    const searchRes = await fetch(searchUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    
+    let existingFileId: string | null = null;
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      if (searchData.files && searchData.files.length > 0) {
+        existingFileId = searchData.files[0].id;
+      }
+    }
+
+    const fileContent = JSON.stringify(products, null, 2);
+    const fileBlob = new Blob([fileContent], { type: 'application/json' });
+
+    const boundary = '---------boundary_' + Math.random().toString(36).substring(2);
+    const firstDelimiter = `--${boundary}\r\n`;
+    const delimiter = `\r\n--${boundary}\r\n`;
+    const closeDelimiter = `\r\n--${boundary}--`;
+
+    const metadata = {
+      name: 'wasabi_products_master.json',
+      mimeType: 'application/json',
+      ...(existingFileId ? {} : { parents: [productFolder] })
+    };
+
+    const requestBody = new Blob(
+      [
+        firstDelimiter,
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n',
+        JSON.stringify(metadata),
+        delimiter,
+        'Content-Type: application/json\r\n\r\n',
+        fileBlob,
+        closeDelimiter,
+      ],
+      { type: `multipart/related; boundary=${boundary}` }
+    );
+
+    const url = existingFileId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${existingFileId}?uploadType=multipart&supportsAllDrives=true`
+      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true';
+
+    const method = existingFileId ? 'PATCH' : 'POST';
+
+    await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body: requestBody,
+    });
+  } catch (err) {
+    console.warn('Backup products to Drive warning:', err);
+  }
+}
+
+/**
+ * Pull product master list from Google Drive
+ */
+export async function pullProductsFromDrive(accessToken: string): Promise<Product[] | null> {
+  if (!accessToken) return null;
+  try {
+    const parentFolderId = getTargetFolderId();
+    const productFolder = await getOrCreateProductImagesFolder(accessToken, parentFolderId);
+
+    const query = `'${productFolder}' in parents and name = 'wasabi_products_master.json' and trashed = false`;
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+    const searchRes = await fetch(searchUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      if (searchData.files && searchData.files.length > 0) {
+        const fileId = searchData.files[0].id;
+        const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (fileRes.ok) {
+          const products = await fileRes.json();
+          if (Array.isArray(products) && products.length > 0) {
+            return products;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Pull products from Drive warning:', err);
+  }
+  return null;
+}
+
+/**
+ * Helper to extract Google Drive file ID from standard URL or direct ID
+ */
+export function extractDriveFileId(idOrUrl?: string): string | null {
+  if (!idOrUrl) return null;
+  const trimmed = idOrUrl.trim();
+  if (!trimmed.includes('/') && !trimmed.includes('http')) {
+    return trimmed;
+  }
+  const matchD = trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchD && matchD[1]) return matchD[1];
+  const matchId = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchId && matchId[1]) return matchId[1];
+  return null;
+}
+
+/**
+ * Delete a PDF file from Google Drive
+ */
+export async function deleteReceiptPdfFromDrive(
+  fileIdOrUrl: string,
+  accessToken: string
+): Promise<boolean> {
+  if (!fileIdOrUrl || !accessToken) return false;
+  const fileId = extractDriveFileId(fileIdOrUrl);
+  if (!fileId) return false;
+
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (res.ok || res.status === 204 || res.status === 404) {
+      return true;
+    }
+    console.warn(`Drive delete responded with status ${res.status} for file ${fileId}`);
+    return false;
+  } catch (err) {
+    console.warn(`Error deleting Drive file ${fileId}:`, err);
+    return false;
   }
 }

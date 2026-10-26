@@ -154,26 +154,42 @@ const svgWasabiBulk = `<g transform="translate(-24, -22)">
 </g>`;
 
 export const PRODUCT_IMAGE_MAP: Record<string, string> = {
-  'prod-01': createProductSvg(['#F0FDF4', '#DCFCE7'], '#15803D', 'WB-01', svgPlumWine, 'ไวน์บ๊วยวาซาบิ 750ml'),
-  'prod-02': createProductSvg(['#FEFCE8', '#FEF08A'], '#A16207', 'WB-02', svgCashewSeaweed, 'เม็ดมะม่วงสาหร่าย 190g'),
-  'prod-03': createProductSvg(['#FAF5FF', '#F3E8FF'], '#7E22CE', 'WB-03', svgCashewTruffle, 'เม็ดมะม่วงทรัฟเฟิล 190g'),
-  'prod-04': createProductSvg(['#FFFBEB', '#FEF3C7'], '#92400E', 'WB-04', svgCashewChoco, 'เม็ดมะม่วงช็อกโก้ 190g'),
-  'prod-05': createProductSvg(['#ECFDF5', '#D1FAE5'], '#047857', 'WB-05', svgWasabiMayo, 'มายองเนส 1 แถม 1'),
-  'prod-06': createProductSvg(['#F0FDF4', '#BBF7D0'], '#166534', 'WB-06', svgWasabiSauce, 'ซอสวาซาบิ 62g'),
-  'prod-07': createProductSvg(['#ECFDF5', '#A7F3D0'], '#059669', 'WB-07', svgWasabiPaste, 'วาซาบิบดหลอด 43g'),
-  'prod-08': createProductSvg(['#F0FDFA', '#CCFBF1'], '#0F766E', 'WB-08', svgCoconutSoap, 'สบู่วาซาบิ โคโคนัท'),
-  'prod-09': createProductSvg(['#FEFCE8', '#FEF9C3'], '#854D0E', 'WB-09', svgRiceSoap, 'สบู่วาซาบิ ไรซ์มิลค์'),
-  'prod-10': createProductSvg(['#FEF2F2', '#FEE2E2'], '#DC2626', 'WB-10', svgKingCrab, 'ก้ามปูหิมะเทียม 200g'),
-  'prod-11': createProductSvg(['#FFF1F2', '#FFE4E6'], '#E11D48', 'WB-11', svgCrabSticks, 'ปูอัดสูตร A1 500g'),
-  'prod-12': createProductSvg(['#FFFBEB', '#FDE68A'], '#D97706', 'WB-12', svgHippoDough, 'แป้งพัฟฮิปโป 300g'),
-  'prod-13': createProductSvg(['#ECFDF5', '#6EE7B7'], '#047857', 'WB-13', svgPickledWasabi, 'วาซาบิดอง 250g'),
-  'prod-14': createProductSvg(['#F0FDF4', '#86EFAC'], '#15803D', 'WB-14', svgWasabiSmall, 'วาซาบิสดเล็ก 15g'),
-  'prod-15': createProductSvg(['#ECFDF5', '#34D399'], '#065F46', 'WB-15', svgWasabiPocket, 'วาซาบิพกพา 150g'),
-  'prod-16': createProductSvg(['#064E3B', '#047857'], '#059669', 'WB-16', svgWasabiBulk, 'วาซาบิใหญ่ 500g'),
+  'prod-01': '/assets/products/WB-01.jpg',
+  'prod-02': '/assets/products/WB-02.jpg',
+  'prod-03': '/assets/products/WB-03.jpg',
+  'prod-04': '/assets/products/WB-04.jpg',
+  'prod-05': '/assets/products/WB-05.jpg',
+  'prod-06': '/assets/products/WB-06.jpg',
+  'prod-07': '/assets/products/WB-07.jpg',
+  'prod-08': '/assets/products/WB-08.jpg',
+  'prod-09': '/assets/products/WB-09.jpg',
+  'prod-10': '/assets/products/WB-10.jpg',
+  'prod-11': '/assets/products/WB-11.jpg',
+  'prod-12': '/assets/products/WB-12.jpg',
+  'prod-13': '/assets/products/WB-13.jpg',
+  'prod-14': '/assets/products/WB-14.jpg',
+  'prod-15': '/assets/products/WB-15.jpg',
+  'prod-16': '/assets/products/WB-16.jpg',
+  'WB-01': '/assets/products/WB-01.jpg',
+  'WB-02': '/assets/products/WB-02.jpg',
+  'WB-03': '/assets/products/WB-03.jpg',
+  'WB-04': '/assets/products/WB-04.jpg',
+  'WB-05': '/assets/products/WB-05.jpg',
+  'WB-06': '/assets/products/WB-06.jpg',
+  'WB-07': '/assets/products/WB-07.jpg',
+  'WB-08': '/assets/products/WB-08.jpg',
+  'WB-09': '/assets/products/WB-09.jpg',
+  'WB-10': '/assets/products/WB-10.jpg',
+  'WB-11': '/assets/products/WB-11.jpg',
+  'WB-12': '/assets/products/WB-12.jpg',
+  'WB-13': '/assets/products/WB-13.jpg',
+  'WB-14': '/assets/products/WB-14.jpg',
+  'WB-15': '/assets/products/WB-15.jpg',
+  'WB-16': '/assets/products/WB-16.jpg',
 };
 
 /**
- * Get product image: returns custom image if present, else default catalog visual
+ * Get product image: returns embedded authentic photo or custom upload
  */
 export function getProductDisplayImage(
   itemOrProd?: { id?: string; code?: string; image?: string; category?: string } | null
@@ -181,16 +197,19 @@ export function getProductDisplayImage(
   if (!itemOrProd) {
     return PRODUCT_IMAGE_MAP['prod-07'];
   }
-  if (itemOrProd.image && itemOrProd.image.trim().length > 0) {
+  if (
+    itemOrProd.image &&
+    itemOrProd.image.trim().length > 0 &&
+    !itemOrProd.image.startsWith('data:image/svg+xml')
+  ) {
     return itemOrProd.image;
+  }
+  if (itemOrProd.code && PRODUCT_IMAGE_MAP[itemOrProd.code]) {
+    return PRODUCT_IMAGE_MAP[itemOrProd.code];
   }
   if (itemOrProd.id && PRODUCT_IMAGE_MAP[itemOrProd.id]) {
     return PRODUCT_IMAGE_MAP[itemOrProd.id];
   }
-  // Lookup by code
-  const entry = Object.entries(PRODUCT_IMAGE_MAP).find(([key]) => key === itemOrProd.id);
-  if (entry) return entry[1];
-
   return PRODUCT_IMAGE_MAP['prod-07'];
 }
 

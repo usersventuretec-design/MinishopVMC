@@ -43,27 +43,82 @@ export const ReceiptDocument = forwardRef<HTMLDivElement, ReceiptDocumentProps>(
             {/* Left: Prominent Official Corporate Brand Logo */}
             <div className="flex-1 min-w-0 flex flex-col justify-start">
               <img
-                src={VENTURETEC_LOGO_SRC}
+                src={companyInfo.logoUrl || VENTURETEC_LOGO_SRC}
                 alt={companyInfo.name || 'Venturetec Marketing CO., LTD.'}
-                className="h-24 max-h-[105px] w-auto max-w-[500px] object-contain object-left filter drop-shadow-2xs"
+                className="h-16 max-h-[64px] w-auto max-w-[320px] object-contain object-left filter drop-shadow-2xs"
+                style={{ maxHeight: '64px', maxWidth: '320px', width: 'auto', height: '64px' }}
                 crossOrigin="anonymous"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = VENTURETEC_LOGO_SRC;
+                }}
               />
             </div>
 
             {/* Right: Official Corporate Document Title & Classification */}
-            <div className="text-right shrink-0 flex flex-col items-end pt-1">
-              <div
-                className="px-4 py-1.5 rounded-md text-[#ffffff] font-bold text-[13px] tracking-wide shadow-xs flex items-center gap-1.5"
-                style={{ backgroundColor: '#007A87' }}
-              >
-                <span>ใบเสร็จรับเงิน / ใบแจ้งหนี้</span>
-              </div>
-              <span className="text-[12px] font-mono font-bold tracking-wider text-[#007A87] mt-1 uppercase">
-                RECEIPT / TAX INVOICE
-              </span>
-              <span className="text-[11px] font-medium text-[#475569] bg-slate-100 px-2.5 py-0.5 rounded mt-1 border border-slate-200">
-                ต้นฉบับ / ORIGINAL
-              </span>
+            <div className="shrink-0" style={{ minWidth: '220px' }}>
+              <table style={{ borderCollapse: 'separate', borderSpacing: 0, marginLeft: 'auto' }}>
+                <tbody>
+                  <tr>
+                    <td style={{ textAlign: 'right', paddingBottom: '8px' }}>
+                      <div
+                        className="shadow-xs"
+                        style={{
+                          backgroundColor: '#007A87',
+                          color: '#ffffff',
+                          fontWeight: 'bold',
+                          fontSize: '13px',
+                          letterSpacing: '0.025em',
+                          padding: '6px 16px',
+                          borderRadius: '6px',
+                          display: 'inline-block',
+                          whiteSpace: 'nowrap',
+                          lineHeight: '1.4',
+                        }}
+                      >
+                        ใบเสร็จรับเงิน / ใบแจ้งหนี้
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ textAlign: 'right', paddingBottom: '12px' }}>
+                      <div
+                        style={{
+                          fontFamily: 'monospace',
+                          fontWeight: 'bold',
+                          fontSize: '12px',
+                          letterSpacing: '0.08em',
+                          color: '#007A87',
+                          textTransform: 'uppercase',
+                          whiteSpace: 'nowrap',
+                          lineHeight: '1.4',
+                        }}
+                      >
+                        RECEIPT / TAX INVOICE
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ textAlign: 'right' }}>
+                      <div
+                        style={{
+                          backgroundColor: '#f1f5f9',
+                          color: '#475569',
+                          fontWeight: 500,
+                          fontSize: '11px',
+                          padding: '4px 14px',
+                          borderRadius: '4px',
+                          border: '1px solid #cbd5e1',
+                          display: 'inline-block',
+                          whiteSpace: 'nowrap',
+                          lineHeight: '1.4',
+                        }}
+                      >
+                        ต้นฉบับ / ORIGINAL
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 

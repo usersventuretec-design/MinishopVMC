@@ -146,6 +146,12 @@ export const googleSignIn = async (): Promise<{ user: any; accessToken: string }
       return { user: result.user, accessToken: cachedAccessToken };
     } catch (popupErr: any) {
       const errorCode = popupErr?.code || '';
+      if (
+        errorCode === 'auth/popup-closed-by-user' ||
+        String(popupErr?.message || '').includes('popup-closed-by-user')
+      ) {
+        return null;
+      }
       console.warn('Firebase popup error:', errorCode, popupErr?.message);
 
       // If Firebase blocked due to unauthorized domain, throw structured domain error
@@ -166,6 +172,11 @@ export const googleSignIn = async (): Promise<{ user: any; accessToken: string }
   } catch (error: any) {
     if (error?.code === 'auth/unauthorized-domain' || error?.message === 'DOMAIN_UNAUTHORIZED') {
       console.info('Firebase auth requires authorized domain setup. Showing guided modal for:', error?.currentDomain);
+    } else if (
+      error?.code === 'auth/popup-closed-by-user' ||
+      String(error?.message || '').includes('popup-closed-by-user')
+    ) {
+      return null;
     } else {
       console.error('Google Sign-in error:', error);
     }

@@ -454,3 +454,117 @@ export async function pullReceiptsFromGoogleSheet(
     throw err;
   }
 }
+
+/**
+ * Delete a receipt row from Google Sheet by matching its Receipt No in Column A
+ */
+export async function deleteReceiptFromGoogleSheet(
+  receiptNo: string,
+  accessToken: string,
+  targetSpreadsheetId?: string
+): Promise<boolean> {
+  if (!receiptNo || !accessToken) return false;
+  const spreadsheetId = targetSpreadsheetId || getTargetSpreadsheetId();
+
+  try {
+    // 1. Get spreadsheet metadata to get sheet title and numerical sheetId
+    const metaRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    if (!metaRes.ok) return false;
+    const meta = await metaRes.json();
+    const sheetObj = meta.sheets?.[0];
+    const sheetTitle = sheetObj?.properties?.title || 'Sheet1';
+    const sheetNumericId = sheetObj?.properties?.sheetId ?? 0;
+
+    // 2. Fetch Column A values to locate receipt row
+    const rangeRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${sheetTitle}'!A:A`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    if (!rangeRes.ok) return false;
+    const rangeData = await rangeRes.json();
+    const values: string[][] = rangeData.values || [];
+
+    // Find row index (0-based) where Column A matches receiptNo
+    const rowIndex = values.findIndex(
+      (row) => row && row[0] && row[0].toString().trim() === receiptNo.trim()
+    );
+    if (rowIndex === -1) {
+      // Row not found or already deleted
+      return true;
+    }
+
+    // 3. Delete the specific row using batchUpdate deleteDimension
+    const batchRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId: sheetNumericId,
+                  dimension: 'ROWS',
+                  startIndex: rowIndex,
+                  endIndex: rowIndex + 1,
+                },
+              },
+            },
+          ],
+        }),
+      }
+    );
+
+    return batchRes.ok;
+  } catch (err) {
+    console.warn(`Error deleting receipt ${receiptNo} from Google Sheet:`, err);
+    return false;
+  }
+}
+
+/**
+ * Clear all data rows (A2:Z) in Google Sheet while preserving headers
+ */
+export async function clearAllReceiptRowsFromGoogleSheet(
+  accessToken: string,
+  targetSpreadsheetId?: string
+): Promise<boolean> {
+  const spreadsheetId = targetSpreadsheetId || getTargetSpreadsheetId();
+  try {
+    const metaRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    if (!metaRes.ok) return false;
+    const meta = await metaRes.json();
+    const sheetTitle = meta.sheets?.[0]?.properties?.title || 'Sheet1';
+
+    const clearRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${sheetTitle}'!A2:Z:clear`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    return clearRes.ok;
+  } catch (err) {
+    console.warn('Error clearing all receipt rows in Sheet:', err);
+    return false;
+  }
+}

@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
 import {
-  Printer,
   Download,
   CloudUpload,
   ExternalLink,
@@ -37,10 +36,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const [isUploadingDrive, setIsUploadingDrive] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(receipt.driveViewLink || null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const handlePrint = () => {
-    window.print();
-  };
 
   const handleDownload = async () => {
     if (!documentRef.current) return;
@@ -153,18 +148,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
               <button
                 type="button"
-                onClick={handlePrint}
-                className="px-3.5 py-2 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium flex items-center justify-center gap-1.5 shadow-xs transition text-center"
-              >
-                <Printer className="w-3.5 h-3.5 shrink-0" />
-                <span>พิมพ์ (Print)</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={handleDownload}
                 disabled={isGeneratingPdf}
-                className="px-3.5 py-2 sm:py-1.5 rounded-lg border border-teal-600 text-teal-700 hover:bg-teal-50 text-xs font-medium flex items-center justify-center gap-1.5 transition text-center"
+                className="px-4 py-2 sm:py-1.5 rounded-lg bg-[#007A87] hover:bg-[#00646e] text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition text-center"
               >
                 <Download className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{isGeneratingPdf ? 'กำลังสร้าง...' : 'ดาวน์โหลด PDF'}</span>

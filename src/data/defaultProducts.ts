@@ -1,5 +1,6 @@
 import { CompanyInfo, Product } from '../types';
 import { PRODUCT_IMAGE_MAP } from './productImages';
+import { VENTURETEC_LOGO_SRC } from './logoBase64';
 
 export const DEFAULT_COMPANY_INFO: CompanyInfo = {
   name: 'Venturetec Marketing CO.,LTD.',
@@ -8,12 +9,13 @@ export const DEFAULT_COMPANY_INFO: CompanyInfo = {
   postalCode: '10900',
   phone: '02-513-7337',
   fax: '02-513-7338',
-  email: 'marketing@venturetec.co.th',
+  email: 'receptionist@venturetec.co.th',
   website: 'www.venturetec.co.th',
   taxId: '0105543026369',
   bankAccount: '800-0-003433',
   bankName: 'ธนาคารกรุงศรีอยุธยา',
   accountName: 'Venturetec Marketing CO.,LTD.',
+  logoUrl: VENTURETEC_LOGO_SRC,
 };
 
 export const INITIAL_PRODUCTS: Product[] = [

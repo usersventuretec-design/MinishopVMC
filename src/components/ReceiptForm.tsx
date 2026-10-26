@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { CompanyInfo, CustomerInfo, PaymentMethod, PaymentStatus, Product, Receipt, ReceiptItem } from '../types';
 import { formatCurrency, thaiBahtText } from '../utils/thaiBaht';
-import { getNextReceiptNumber } from '../services/storage';
+import { getNextReceiptNumber, getStaffList, addStaffName, removeStaffName } from '../services/storage';
 import { getProductDisplayImage, compressImageFile } from '../data/productImages';
 import { parseOrderWithAI, getSmartUpsellWithAI, SmartUpsellResult } from '../services/aiService';
 
@@ -75,7 +75,13 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
   const [serviceCharge, setServiceCharge] = useState<number>(0);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('PAID');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('TRANSFER');
-  const [staffName, setStaffName] = useState<string>('ฝ่ายขาย Mini Shop');
+  const [staffList, setStaffList] = useState<string[]>(() => getStaffList());
+  const [staffName, setStaffName] = useState<string>(() => {
+    const list = getStaffList();
+    return list.length > 0 ? list[0] : 'ฝ่ายขาย Mini Shop';
+  });
+  const [showAddStaffModal, setShowAddStaffModal] = useState<boolean>(false);
+  const [newStaffInput, setNewStaffInput] = useState<string>('');
   const [remarks, setRemarks] = useState<string>('');
   
   // Quick product shelf (POS Style)
@@ -286,7 +292,15 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
 
         if (parsed.matchedItems && parsed.matchedItems.length > 0) {
           const newItems: ReceiptItem[] = parsed.matchedItems.map((item, idx) => {
-            const cat = products.find((p) => p.id === item.productId || p.nameEn === item.description || p.nameTh === item.description);
+            const cat = products.find(
+              (p) =>
+                p.id === item.productId ||
+                p.code.toLowerCase() === (item.productId || '').toLowerCase() ||
+                p.nameEn.toLowerCase().includes((item.description || '').toLowerCase()) ||
+                p.nameTh.toLowerCase().includes((item.description || '').toLowerCase()) ||
+                (item.description || '').toLowerCase().includes(p.nameEn.toLowerCase()) ||
+                (item.description || '').toLowerCase().includes(p.nameTh.toLowerCase())
+            );
             return {
               id: `item_ai_${Date.now()}_${idx}`,
               productId: cat?.id || item.productId,
@@ -295,7 +309,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
               quantity: item.quantity || 1,
               unitPrice: item.unitPrice || cat?.price || 0,
               amount: (item.quantity || 1) * (item.unitPrice || cat?.price || 0),
-              image: cat?.image || (cat ? getProductDisplayImage(cat) : undefined),
+              image: cat?.image || getProductDisplayImage(cat || { id: item.productId, code: item.productId }),
             };
           });
           setItems(newItems);
@@ -1712,15 +1726,39 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  พนักงานขาย / ผู้บันทึก
-                </label>
-                <input
-                  type="text"
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-700">
+                    พนักงานขาย / ผู้บันทึก
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddStaffModal(true)}
+                    className="text-[11px] text-teal-700 hover:text-teal-900 font-semibold flex items-center gap-1 hover:underline"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>จัดการ/เพิ่มรายชื่อ</span>
+                  </button>
+                </div>
+                <select
                   value={staffName}
-                  onChange={(e) => setStaffName(e.target.value)}
-                  className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white"
-                />
+                  onChange={(e) => {
+                    if (e.target.value === '__add_new__') {
+                      setShowAddStaffModal(true);
+                    } else {
+                      setStaffName(e.target.value);
+                    }
+                  }}
+                  className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white font-medium text-slate-800"
+                >
+                  {staffList.map((stf) => (
+                    <option key={stf} value={stf}>
+                      {stf}
+                    </option>
+                  ))}
+                  <option value="__add_new__" className="font-bold text-teal-700">
+                    + เพิ่มรายชื่อพนักงานขายใหม่...
+                  </option>
+                </select>
               </div>
 
               <div>
@@ -1868,15 +1906,6 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
         </button>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => handleSubmit(true)}
-            className="px-5 py-2.5 rounded-xl border border-teal-600 text-teal-700 hover:bg-teal-50 font-medium text-xs flex items-center gap-2 transition"
-          >
-            <FileCheck className="w-4 h-4" />
-            บันทึกและพิมพ์ใบเสร็จ (Save & Print)
-          </button>
-          
           <button
             type="button"
             onClick={() => handleSubmit(false)}
@@ -2380,6 +2409,113 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
               >
                 <Sparkles className={`w-4 h-4 text-amber-300 ${isParsingAi ? 'animate-spin' : ''}`} />
                 <span>{isParsingAi ? 'AI กำลังแยกข้อมูล...' : 'ให้ AI แยกข้อมูลลงใบเสร็จ'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Manage Staff Members Modal */}
+      {showAddStaffModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4 border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-teal-700" />
+                <h3 className="font-bold text-sm text-slate-900">จัดการรายชื่อพนักงานขาย / ผู้บันทึก</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddStaffModal(false)}
+                className="p-1 rounded-full text-slate-400 hover:bg-slate-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Add Form */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="กรอกชื่อพนักงานขายใหม่..."
+                value={newStaffInput}
+                onChange={(e) => setNewStaffInput(e.target.value)}
+                className="flex-1 text-xs border border-slate-300 rounded-xl px-3 py-2 bg-white focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (newStaffInput.trim()) {
+                      const updated = addStaffName(newStaffInput.trim());
+                      setStaffList(updated);
+                      setStaffName(newStaffInput.trim());
+                      setNewStaffInput('');
+                    }
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (newStaffInput.trim()) {
+                    const updated = addStaffName(newStaffInput.trim());
+                    setStaffList(updated);
+                    setStaffName(newStaffInput.trim());
+                    setNewStaffInput('');
+                  }
+                }}
+                className="px-4 py-2 bg-[#007A87] hover:bg-[#00646e] text-white text-xs font-semibold rounded-xl transition shrink-0"
+              >
+                เพิ่ม
+              </button>
+            </div>
+
+            {/* List of current staff */}
+            <div className="space-y-1.5 max-h-52 overflow-y-auto pt-2">
+              <p className="text-[11px] font-semibold text-slate-500">รายชื่อพนักงานที่มีในระบบ:</p>
+              {staffList.map((stf) => (
+                <div
+                  key={stf}
+                  className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 hover:border-teal-300 transition"
+                >
+                  <span className="font-medium truncate max-w-[200px]">{stf}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStaffName(stf);
+                        setShowAddStaffModal(false);
+                      }}
+                      className="px-2.5 py-1 bg-teal-100 text-teal-800 rounded-lg font-semibold text-[10px] hover:bg-teal-200 transition"
+                    >
+                      เลือกใช้งาน
+                    </button>
+                    {staffList.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = removeStaffName(stf);
+                          setStaffList(updated);
+                          if (staffName === stf && updated.length > 0) {
+                            setStaffName(updated[0]);
+                          }
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                        title="ลบรายชื่อนี้"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-2 border-t flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAddStaffModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
+              >
+                ปิดหน้าต่าง
               </button>
             </div>
           </div>

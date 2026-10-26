@@ -9,7 +9,6 @@ import {
   ExternalLink,
   CheckCircle2,
   Clock,
-  Printer,
   FileSpreadsheet,
   RefreshCw,
   TrendingUp,
@@ -26,7 +25,6 @@ import { DRIVE_FOLDER_URL } from '../services/googleDrive';
 interface SalesHistoryProps {
   receipts: Receipt[];
   onViewReceipt: (receipt: Receipt) => void;
-  onPrintReceipt: (receipt: Receipt) => void;
   onDeleteReceipt: (id: string) => void;
   onClearAllReceipts: (resetCounter: boolean) => void;
   onSyncReceiptToSheet: (receipt: Receipt) => void;
@@ -41,7 +39,6 @@ interface SalesHistoryProps {
 export const SalesHistory: React.FC<SalesHistoryProps> = ({
   receipts,
   onViewReceipt,
-  onPrintReceipt,
   onDeleteReceipt,
   onClearAllReceipts,
   onSyncReceiptToSheet,
@@ -58,9 +55,10 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({
   const [endDate, setEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   
-  // Clear modal state
+  // Clear modal & single delete modal state
   const [showClearModal, setShowClearModal] = useState(false);
   const [resetRunningCounter, setResetRunningCounter] = useState(true);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{ id: string; receiptNo: string } | null>(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -507,19 +505,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => onPrintReceipt(rcpt)}
-                          title="พิมพ์ใบเสร็จ"
-                          className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm(`คุณต้องการลบใบเสร็จ ${rcpt.receiptNo} หรือไม่?`)) {
-                              onDeleteReceipt(rcpt.id);
-                            }
-                          }}
+                          onClick={() => setDeleteConfirmTarget({ id: rcpt.id, receiptNo: rcpt.receiptNo })}
                           title="ลบใบเสร็จนี้"
                           className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
                         >
@@ -617,20 +603,7 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => onPrintReceipt(rcpt)}
-                      className="p-1.5 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg"
-                      title="พิมพ์"
-                    >
-                      <Printer className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm(`คุณต้องการลบใบเสร็จ ${rcpt.receiptNo} หรือไม่?`)) {
-                          onDeleteReceipt(rcpt.id);
-                        }
-                      }}
+                      onClick={() => setDeleteConfirmTarget({ id: rcpt.id, receiptNo: rcpt.receiptNo })}
                       className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
                       title="ลบ"
                     >
@@ -691,6 +664,41 @@ export const SalesHistory: React.FC<SalesHistoryProps> = ({
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-medium shadow-sm"
               >
                 ยืนยันล้างข้อมูล
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Single Receipt Delete Confirmation Modal */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 border border-slate-200">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-base text-slate-900">ยืนยันการลบใบเสร็จ</h3>
+              <p className="text-xs text-slate-500">
+                คุณต้องการลบใบเสร็จ <span className="font-mono font-bold text-red-600">{deleteConfirmTarget.receiptNo}</span> ออกจากระบบใช่หรือไม่?
+              </p>
+            </div>
+            <div className="flex items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget(null)}
+                className="flex-1 py-2 rounded-xl border border-slate-300 text-slate-700 font-medium text-xs hover:bg-slate-50 transition"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteReceipt(deleteConfirmTarget.id);
+                  setDeleteConfirmTarget(null);
+                }}
+                className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-medium text-xs shadow-sm transition"
+              >
+                ยืนยันการลบ
               </button>
             </div>
           </div>

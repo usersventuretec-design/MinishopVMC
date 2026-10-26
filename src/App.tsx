@@ -25,6 +25,7 @@ import {
   updateReceipt,
   deleteReceipt,
   clearAllReceipts,
+  resetReceiptsToDefault,
   getRunningConfig,
   saveRunningConfig,
   RunningConfig,
@@ -43,11 +44,16 @@ import {
   pullReceiptsFromGoogleSheet,
   getTargetSpreadsheetId,
   getSpreadsheetUrl,
+  deleteReceiptFromGoogleSheet,
+  clearAllReceiptRowsFromGoogleSheet,
 } from './services/googleSheets';
 import {
   uploadReceiptPdfToDrive,
   getTargetFolderId,
   getDriveFolderUrl,
+  backupProductsToDrive,
+  pullProductsFromDrive,
+  deleteReceiptPdfFromDrive,
 } from './services/googleDrive';
 import { generateReceiptPdfBlob } from './utils/pdfGenerator';
 import { GoogleWorkspaceBar } from './components/GoogleWorkspaceBar';
@@ -156,26 +162,32 @@ export default function App() {
       }
 
       const remoteReceipts = await pullReceiptsFromGoogleSheet(token, getTargetSpreadsheetId());
-      if (remoteReceipts.length === 0) {
+      if (remoteReceipts.length > 0) {
+        const { merged, addedCount, updatedCount } = mergeRemoteReceipts(remoteReceipts);
+        setReceipts(merged);
+        setRunningConfig(getRunningConfig());
+
         if (!silent) {
-          showNotify('info', 'ยังไม่มีรายการข้อมูลใน Google Sheet');
+          if (addedCount > 0 || updatedCount > 0) {
+            showNotify(
+              'success',
+              `ดึงข้อมูลสำเร็จ! พบรายการใหม่ ${addedCount} รายการ และอัปเดตลิงก์ PDF ${updatedCount} รายการ (รวมทั้งหมด ${merged.length} รายการ)`
+            );
+          } else {
+            showNotify('success', `ข้อมูลบนเครื่องตรงกับ Google Sheet ล่าสุดแล้ว (${merged.length} รายการ)`);
+          }
         }
-        return;
       }
 
-      const { merged, addedCount, updatedCount } = mergeRemoteReceipts(remoteReceipts);
-      setReceipts(merged);
-      setRunningConfig(getRunningConfig());
-
-      if (!silent) {
-        if (addedCount > 0 || updatedCount > 0) {
-          showNotify(
-            'success',
-            `ดึงข้อมูลสำเร็จ! พบรายการใหม่ ${addedCount} รายการ และอัปเดตลิงก์ PDF ${updatedCount} รายการ (รวมทั้งหมด ${merged.length} รายการ)`
-          );
-        } else {
-          showNotify('success', `ข้อมูลบนเครื่องตรงกับ Google Sheet ล่าสุดแล้ว (${merged.length} รายการ)`);
+      // Also pull product master & images from Google Drive
+      try {
+        const remoteProducts = await pullProductsFromDrive(token);
+        if (remoteProducts && remoteProducts.length > 0) {
+          setProducts(remoteProducts);
+          saveProducts(remoteProducts);
         }
+      } catch (pErr) {
+        console.warn('Pull products from Drive warning:', pErr);
       }
     } catch (err: any) {
       if (err?.message === 'GOOGLE_AUTH_EXPIRED' || err?.message?.includes('invalid authentication credentials')) {
@@ -210,6 +222,8 @@ export default function App() {
         showNotify('success', `ยินดีต้อนรับ ${res.user.displayName || res.user.email} เชื่อมต่อ Google Workspace สำเร็จ!`);
         // Automatically sync and pull existing receipts from Google Sheet!
         handlePullFromGoogleSheet(res.accessToken, false);
+      } else {
+        showNotify('info', 'ยกเลิกการเข้าสู่ระบบผ่าน Google');
       }
     } catch (err: any) {
       if (
@@ -219,6 +233,11 @@ export default function App() {
       ) {
         setShowDomainModal(true);
         showNotify('info', 'กรุณาเพิ่มชื่อโดเมนใน Firebase Console หรือเข้าสู่ระบบตรง');
+      } else if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        String(err?.message || '').includes('popup-closed-by-user')
+      ) {
+        showNotify('info', 'ยกเลิกการเข้าสู่ระบบผ่าน Google');
       } else {
         console.error('Login error:', err);
         showNotify('error', `การเข้าสู่ระบบ Google ขัดข้อง: ${err?.message || 'กรุณาลองใหม่อีกครั้ง'}`);
@@ -274,8 +293,7 @@ export default function App() {
 
   // Save new receipt (with auto PDF upload to date subfolder in Drive + write to Google Sheet)
   const handleSaveReceipt = async (
-    receiptData: Omit<Receipt, 'id' | 'createdAt'>,
-    printAfter: boolean
+    receiptData: Omit<Receipt, 'id' | 'createdAt'>
   ) => {
     try {
       let created = createReceipt(receiptData);
@@ -313,15 +331,9 @@ export default function App() {
         }
       }
 
-      // Open Modal to view/print/manage
+      // Open Modal to view/download/manage
       setActiveReceiptForModal(created);
       setEditingReceiptForForm(null);
-
-      if (printAfter) {
-        setTimeout(() => {
-          window.print();
-        }, 500);
-      }
     } catch (err: any) {
       console.error('Save receipt error:', err);
       showNotify('error', 'เกิดข้อผิดพลาดในการบันทึกใบเสร็จ');
@@ -443,27 +455,69 @@ export default function App() {
     }
   };
 
-  // Delete single receipt
-  const handleDeleteReceipt = (id: string) => {
+  // Delete single receipt (local storage + Google Sheet + Google Drive)
+  const handleDeleteReceipt = async (id: string) => {
+    const target = receipts.find((r) => r.id === id);
     deleteReceipt(id);
     setReceipts(getReceipts());
-    showNotify('info', 'ลบรายการใบเสร็จเรียบร้อยแล้ว');
+    showNotify('info', `ลบรายการใบเสร็จ ${target ? target.receiptNo : ''} เรียบร้อยแล้ว`);
+
+    if (target) {
+      const token = googleAccessToken || (await getAccessToken());
+      if (token) {
+        try {
+          await deleteReceiptFromGoogleSheet(target.receiptNo, token, getTargetSpreadsheetId());
+        } catch (sErr) {
+          console.warn('Sheet row delete notice:', sErr);
+        }
+
+        try {
+          const fileId = target.driveFileId || target.driveViewLink;
+          if (fileId) {
+            await deleteReceiptPdfFromDrive(fileId, token);
+          }
+        } catch (dErr) {
+          console.warn('Drive file delete notice:', dErr);
+        }
+      }
+    }
   };
 
   // Clear all receipts
-  const handleClearAllReceipts = (resetCounter: boolean) => {
+  const handleClearAllReceipts = async (resetCounter: boolean) => {
     clearAllReceipts(resetCounter);
     setReceipts([]);
     if (resetCounter) {
       setRunningConfig(getRunningConfig());
     }
     showNotify('info', 'ล้างข้อมูลประวัติการขายทั้งหมดเรียบร้อยแล้ว');
+
+    const token = googleAccessToken || (await getAccessToken());
+    if (token) {
+      try {
+        await clearAllReceiptRowsFromGoogleSheet(token, getTargetSpreadsheetId());
+      } catch (err) {
+        console.warn('Clear sheet notice:', err);
+      }
+    }
+  };
+
+  const handleResetReceipts = () => {
+    const seeded = resetReceiptsToDefault();
+    setReceipts(seeded);
+    setRunningConfig(getRunningConfig());
+    showNotify('success', 'ย้อนคืนใบเสร็จกลับสู่ค่าเริ่มต้นเรียบร้อยแล้ว');
   };
 
   // Products update
   const handleUpdateProducts = (updatedProds: Product[]) => {
     saveProducts(updatedProds);
     setProducts(updatedProds);
+    if (googleAccessToken) {
+      backupProductsToDrive(updatedProds, googleAccessToken).catch((err) => {
+        console.warn('Background backup products to Drive failed:', err);
+      });
+    }
     showNotify('success', 'บันทึกการเปลี่ยนแปลงรายการสินค้าเรียบร้อย');
   };
 
@@ -526,23 +580,18 @@ export default function App() {
             {/* Left Header Section */}
             {!isHeaderCollapsed ? (
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#007A87] text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
-                    V
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                      {companyInfo.name}
+                    </h1>
+                    <span className="text-[10px] bg-teal-100 text-teal-800 font-bold px-2 py-0.5 rounded-full">
+                      WASABI-O
+                    </span>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-                        {companyInfo.name}
-                      </h1>
-                      <span className="text-[10px] bg-teal-100 text-teal-800 font-bold px-2 py-0.5 rounded-full">
-                        WASABI-O
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      ระบบบริหารจัดการใบเสร็จรับเงิน & ประวัติการขาย Mini Shop
-                    </p>
-                  </div>
+                  <p className="text-xs text-slate-500">
+                    ระบบบริหารจัดการใบเสร็จรับเงิน & ประวัติการขาย Mini Shop
+                  </p>
                 </div>
 
                 {/* Quick Collapse Button visible on mobile screens */}
@@ -559,18 +608,13 @@ export default function App() {
             ) : (
               /* Compact Brand & Quick Status in Collapsed Mode */
               <div className="flex items-center justify-between md:justify-start gap-2 sm:gap-3 shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-[#007A87] text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0">
-                    V
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-xs sm:text-sm text-slate-900 tracking-tight">
-                      WASABI-O
-                    </span>
-                    <span className="text-[9px] font-mono bg-teal-100 text-teal-800 font-semibold px-1.5 py-0.2 rounded hidden sm:inline">
-                      Mini Shop
-                    </span>
-                  </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-xs sm:text-sm text-slate-900 tracking-tight">
+                    WASABI-O
+                  </span>
+                  <span className="text-[9px] font-mono bg-teal-100 text-teal-800 font-semibold px-1.5 py-0.2 rounded hidden sm:inline">
+                    Mini Shop
+                  </span>
                 </div>
 
                 {/* Quick Google Workspace Indicators in Collapsed Mode */}
@@ -786,10 +830,6 @@ export default function App() {
           <SalesHistory
             receipts={receipts}
             onViewReceipt={(r) => setActiveReceiptForModal(r)}
-            onPrintReceipt={(r) => {
-              setActiveReceiptForModal(r);
-              setTimeout(() => window.print(), 400);
-            }}
             onDeleteReceipt={handleDeleteReceipt}
             onClearAllReceipts={handleClearAllReceipts}
             onSyncReceiptToSheet={handleSyncReceiptToSheet}
@@ -993,6 +1033,7 @@ export default function App() {
           runningConfig={runningConfig}
           onSaveCompany={handleSaveCompany}
           onSaveRunning={handleSaveRunning}
+          onResetReceipts={handleResetReceipts}
           onSaveWorkspace={() => {
             showNotify('success', 'บันทึกการตั้งค่า Google Workspace เรียบร้อย');
           }}

@@ -6,6 +6,51 @@ const RECEIPTS_KEY = 'venturetec_receipts_v1';
 const PRODUCTS_KEY = 'venturetec_products_v1';
 const COMPANY_KEY = 'venturetec_company_v1';
 const RUNNING_CONFIG_KEY = 'venturetec_running_config_v1';
+const STAFF_LIST_KEY = 'wasabi_staff_list_v1';
+
+export const DEFAULT_STAFF_LIST: string[] = [
+  'ฝ่ายขาย Mini Shop',
+  'คุณสมชาย (ขายหน้าร้าน)',
+  'คุณวิภา (ออนไลน์)',
+  'คุณสุพรรณี (แอดมิน)',
+];
+
+export function getStaffList(): string[] {
+  try {
+    const raw = localStorage.getItem(STAFF_LIST_KEY);
+    if (!raw) {
+      localStorage.setItem(STAFF_LIST_KEY, JSON.stringify(DEFAULT_STAFF_LIST));
+      return DEFAULT_STAFF_LIST;
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_STAFF_LIST;
+  } catch {
+    return DEFAULT_STAFF_LIST;
+  }
+}
+
+export function saveStaffList(list: string[]): void {
+  localStorage.setItem(STAFF_LIST_KEY, JSON.stringify(list));
+}
+
+export function addStaffName(name: string): string[] {
+  const trimmed = name.trim();
+  if (!trimmed) return getStaffList();
+  const current = getStaffList();
+  if (!current.includes(trimmed)) {
+    const updated = [...current, trimmed];
+    saveStaffList(updated);
+    return updated;
+  }
+  return current;
+}
+
+export function removeStaffName(name: string): string[] {
+  const current = getStaffList();
+  const updated = current.filter((s) => s !== name);
+  saveStaffList(updated);
+  return updated;
+}
 
 export interface RunningConfig {
   prefix: string; // e.g. "MS"
@@ -24,7 +69,34 @@ const DEFAULT_RUNNING_CONFIG: RunningConfig = {
 export function getCompanyInfo(): CompanyInfo {
   try {
     const raw = localStorage.getItem(COMPANY_KEY);
-    return raw ? JSON.parse(raw) : DEFAULT_COMPANY_INFO;
+    if (!raw) {
+      localStorage.setItem(COMPANY_KEY, JSON.stringify(DEFAULT_COMPANY_INFO));
+      return DEFAULT_COMPANY_INFO;
+    }
+    const info = JSON.parse(raw);
+    let changed = false;
+
+    // Migrate old marketing email to receptionist@venturetec.co.th
+    if (!info.email || info.email === 'marketing@venturetec.co.th') {
+      info.email = 'receptionist@venturetec.co.th';
+      changed = true;
+    }
+
+    if (
+      !info.logoUrl ||
+      info.logoUrl.includes('drive.google.com') ||
+      info.logoUrl.includes('googleusercontent.com') ||
+      info.logoUrl.includes('1zaz9sF4cf0M2OXB4pOa639AqTAuwS-52') ||
+      info.logoUrl.includes('1si2CEFUfIJ8qdhiy27PYXqIgJ7IZSW8Y')
+    ) {
+      info.logoUrl = DEFAULT_COMPANY_INFO.logoUrl;
+      changed = true;
+    }
+
+    if (changed) {
+      localStorage.setItem(COMPANY_KEY, JSON.stringify(info));
+    }
+    return info;
   } catch {
     return DEFAULT_COMPANY_INFO;
   }
@@ -42,16 +114,19 @@ export function getProducts(): Product[] {
       return INITIAL_PRODUCTS;
     }
     const list: Product[] = JSON.parse(raw);
-    // Backfill images if not yet set in existing storage
+    let changed = false;
+    // Upgrade existing storage items if missing image or using previous SVG illustration
     const enriched = list.map((p) => {
-      if (!p.image) {
-        const init = INITIAL_PRODUCTS.find((i) => i.id === p.id || i.code === p.code);
-        if (init?.image) {
-          return { ...p, image: init.image };
-        }
+      const init = INITIAL_PRODUCTS.find((i) => i.id === p.id || i.code === p.code);
+      if (init && (!p.image || p.image.startsWith('data:image/svg+xml') || p.image.includes('placeholder'))) {
+        changed = true;
+        return { ...p, image: init.image };
       }
       return p;
     });
+    if (changed) {
+      localStorage.setItem(PRODUCTS_KEY, JSON.stringify(enriched));
+    }
     return enriched;
   } catch {
     return INITIAL_PRODUCTS;
@@ -185,6 +260,15 @@ export function clearAllReceipts(resetCounter: boolean = false): void {
     config.lastNumber = 0;
     saveRunningConfig(config);
   }
+}
+
+export function resetReceiptsToDefault(): Receipt[] {
+  const seeded = generateSeedReceipts();
+  localStorage.setItem(RECEIPTS_KEY, JSON.stringify(seeded));
+  const config = getRunningConfig();
+  config.lastNumber = 2;
+  saveRunningConfig(config);
+  return seeded;
 }
 
 /**

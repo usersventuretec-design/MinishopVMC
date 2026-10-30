@@ -170,6 +170,7 @@ export const PRODUCT_IMAGE_MAP: Record<string, string> = {
   'prod-14': '/assets/products/WB-14.jpg',
   'prod-15': '/assets/products/WB-15.jpg',
   'prod-16': '/assets/products/WB-16.jpg',
+  'prod-17': '/assets/products/WB-17-green.png',
   'WB-01': '/assets/products/WB-01.jpg',
   'WB-02': '/assets/products/WB-02.jpg',
   'WB-03': '/assets/products/WB-03.jpg',
@@ -186,6 +187,9 @@ export const PRODUCT_IMAGE_MAP: Record<string, string> = {
   'WB-14': '/assets/products/WB-14.jpg',
   'WB-15': '/assets/products/WB-15.jpg',
   'WB-16': '/assets/products/WB-16.jpg',
+  'WB-17': '/assets/products/WB-17-green.png',
+  'WB-17-green': '/assets/products/WB-17-green.png',
+  'WB-17-latte': '/assets/products/WB-17-latte.png',
 };
 
 /**

@@ -1,3 +1,9 @@
+export interface ProductColorOption {
+  name: string; // e.g. 'Green' | 'Latte'
+  label: string; // e.g. 'Green (เขียว)'
+  image: string; // e.g. '/assets/products/WB-17-green.png'
+}
+
 export interface Product {
   id: string;
   code: string;
@@ -5,9 +11,12 @@ export interface Product {
   nameEn: string;
   size: string;
   price: number;
-  category: 'wasabi' | 'cashew' | 'sauce' | 'soap' | 'seafood' | 'dough' | 'other';
+  category: 'wasabi' | 'cashew' | 'sauce' | 'soap' | 'seafood' | 'dough' | 'apparel' | 'other';
   image?: string;
   active: boolean;
+  hasOptions?: boolean;
+  sizes?: string[];
+  colors?: ProductColorOption[];
 }
 
 export interface ReceiptItem {
@@ -19,6 +28,8 @@ export interface ReceiptItem {
   unitPrice: number;
   amount: number;
   image?: string;
+  selectedSize?: string;
+  selectedColor?: string;
 }
 
 export type PaymentMethod = 'TRANSFER' | 'CASH' | 'PROMPTPAY' | 'CREDIT_CARD';

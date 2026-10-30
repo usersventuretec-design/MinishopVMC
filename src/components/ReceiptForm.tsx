@@ -127,6 +127,12 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
   const [isParsingAi, setIsParsingAi] = useState<boolean>(false);
   const [aiParseNotice, setAiParseNotice] = useState<string | null>(null);
 
+  // Option selection modal state for Apparel / T-shirt products
+  const [optionModalProduct, setOptionModalProduct] = useState<Product | null>(null);
+  const [selectedSize, setSelectedSize] = useState<string>('Freesize');
+  const [selectedColor, setSelectedColor] = useState<string>('Green');
+  const [optionQty, setOptionQty] = useState<number>(1);
+
   // Extract unique past customers from receipts
   const pastCustomers = useMemo(() => {
     if (!receipts || receipts.length === 0) return [];
@@ -403,10 +409,33 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
     }
   }, [initialReceipt]);
 
+  const openOptionModalForProduct = (prod: Product) => {
+    setOptionModalProduct(prod);
+    const availableSizes = (prod.sizes && prod.sizes.length > 0)
+      ? prod.sizes
+      : ['Freesize', 'M', 'L', 'XL', '2XL'];
+    const availableColors = (prod.colors && prod.colors.length > 0)
+      ? prod.colors
+      : (prod.code === 'WB-17' || prod.category === 'apparel')
+      ? [
+          { name: 'Green', label: 'เขียวซากุระ (Green)', image: '/assets/products/WB-17-green.png' },
+          { name: 'Latte', label: 'ลาเต้/ครีม (Latte)', image: '/assets/products/WB-17-latte.png' },
+        ]
+      : [];
+    setSelectedSize(availableSizes[0] || 'Freesize');
+    setSelectedColor(availableColors[0]?.name || '');
+    setOptionQty(1);
+  };
+
   // Handle item change
   const handleItemProductSelect = (index: number, productId: string) => {
     const prod = products.find((p) => p.id === productId);
     if (!prod) return;
+
+    if (prod.hasOptions || prod.category === 'apparel' || (prod.sizes && prod.sizes.length > 0) || (prod.colors && prod.colors.length > 0) || prod.code === 'WB-17') {
+      openOptionModalForProduct(prod);
+      return;
+    }
 
     setItems((prev) => {
       const copy = [...prev];
@@ -459,6 +488,11 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
 
   const handleAddItem = (prod?: Product) => {
     const p = prod || products[0];
+    if (p && (p.hasOptions || p.category === 'apparel' || (p.sizes && p.sizes.length > 0) || (p.colors && p.colors.length > 0) || p.code === 'WB-17')) {
+      openOptionModalForProduct(p);
+      return;
+    }
+
     const newItem: ReceiptItem = {
       id: 'item_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
       productId: p ? p.id : undefined,
@@ -474,6 +508,11 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
 
   // Quick add / increment from shelf
   const handleQuickAddProduct = (prod: Product) => {
+    if (prod.hasOptions || prod.category === 'apparel' || (prod.sizes && prod.sizes.length > 0) || (prod.colors && prod.colors.length > 0) || prod.code === 'WB-17') {
+      openOptionModalForProduct(prod);
+      return;
+    }
+
     setItems((prev) => {
       const existingIdx = prev.findIndex(
         (item) => item.productId === prod.id || (item.code && item.code === prod.code)
@@ -504,6 +543,57 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
         ];
       }
     });
+  };
+
+  const handleConfirmAddApparelOption = () => {
+    if (!optionModalProduct) return;
+    const prod = optionModalProduct;
+
+    const availableColors = (prod.colors && prod.colors.length > 0)
+      ? prod.colors
+      : (prod.code === 'WB-17' || prod.category === 'apparel')
+      ? [
+          { name: 'Green', label: 'เขียวซากุระ (Green)', image: '/assets/products/WB-17-green.png' },
+          { name: 'Latte', label: 'ลาเต้/ครีม (Latte)', image: '/assets/products/WB-17-latte.png' },
+        ]
+      : [];
+
+    let customImg = prod.image || getProductDisplayImage(prod);
+    const activeColor = availableColors.find(c => c.name.toLowerCase() === selectedColor.toLowerCase());
+    if (activeColor && activeColor.image) {
+      customImg = activeColor.image;
+    } else if (prod.code === 'WB-17') {
+      if (selectedColor.toLowerCase() === 'green') {
+        customImg = '/assets/products/WB-17-green.png';
+      } else if (selectedColor.toLowerCase() === 'latte') {
+        customImg = '/assets/products/WB-17-latte.png';
+      }
+    }
+
+    const optionParts: string[] = [];
+    if (selectedColor && availableColors.length > 0) optionParts.push(selectedColor);
+    if (selectedSize) optionParts.push(`Size ${selectedSize}`);
+    const optionText = optionParts.length > 0 ? ` [${optionParts.join(' - ')}]` : '';
+
+    const desc = `${prod.nameEn}${optionText}`;
+
+    setItems((prev) => [
+      ...prev,
+      {
+        id: 'item_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5),
+        productId: prod.id,
+        code: prod.code,
+        description: desc,
+        quantity: optionQty,
+        unitPrice: prod.price,
+        amount: optionQty * prod.price,
+        image: customImg,
+        selectedSize: selectedSize || undefined,
+        selectedColor: selectedColor || undefined,
+      },
+    ]);
+
+    setOptionModalProduct(null);
   };
 
   // Quick decrement from shelf - allows removing completely when 1 -> 0
@@ -1132,6 +1222,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
                     { id: 'seafood', label: '🦀 ซีฟู้ด & ปูอัด', count: products.filter(p => p.category === 'seafood').length },
                     { id: 'dough', label: '🥐 แป้งโดว์', count: products.filter(p => p.category === 'dough').length },
                     { id: 'soap', label: '🧼 สบู่', count: products.filter(p => p.category === 'soap').length },
+                    { id: 'apparel', label: '👕 เสื้อผ้า', count: products.filter(p => p.category === 'apparel').length },
                   ].map((cat) => {
                     const isActive = shelfCategory === cat.id;
                     return (
@@ -2172,8 +2263,8 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
                   2. หรือระบุลิงก์รูปภาพ (Image URL)
                 </label>
                 <input
-                  type="url"
-                  placeholder="https://example.com/image.jpg"
+                  type="text"
+                  placeholder="https://example.com/image.jpg หรือ /assets/..."
                   value={tempAttachUrl.startsWith('data:') ? '' : tempAttachUrl}
                   onChange={(e) => setTempAttachUrl(e.target.value)}
                   className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
@@ -2516,6 +2607,203 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({
                 className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
               >
                 ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Apparel / T-Shirt Options Selection Modal */}
+      {optionModalProduct && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div
+            className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 flex flex-col border border-teal-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 bg-[#007A87] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-amber-300" />
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base">{optionModalProduct.nameEn}</h3>
+                  <p className="text-[11px] text-teal-100">[{optionModalProduct.code}] เลือกขนาดและสีสินค้า</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOptionModalProduct(null)}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            {(() => {
+              const availableColors = (optionModalProduct.colors && optionModalProduct.colors.length > 0)
+                ? optionModalProduct.colors
+                : (optionModalProduct.code === 'WB-17' || optionModalProduct.category === 'apparel')
+                ? [
+                    { name: 'Green', label: 'เขียวซากุระ (Green)', image: '/assets/products/WB-17-green.png' },
+                    { name: 'Latte', label: 'ลาเต้/ครีม (Latte)', image: '/assets/products/WB-17-latte.png' },
+                  ]
+                : [];
+
+              const availableSizes = (optionModalProduct.sizes && optionModalProduct.sizes.length > 0)
+                ? optionModalProduct.sizes
+                : ['Freesize', 'M', 'L', 'XL', '2XL'];
+
+              const activeColor = availableColors.find(c => c.name.toLowerCase() === selectedColor.toLowerCase());
+              const displayImg = (activeColor && activeColor.image)
+                ? activeColor.image
+                : (optionModalProduct.code === 'WB-17' && selectedColor.toLowerCase() === 'green')
+                ? '/assets/products/WB-17-green.png'
+                : (optionModalProduct.code === 'WB-17' && selectedColor.toLowerCase() === 'latte')
+                ? '/assets/products/WB-17-latte.png'
+                : (optionModalProduct.image || getProductDisplayImage(optionModalProduct));
+
+              return (
+                <div className="p-4 space-y-4 text-xs overflow-y-auto max-h-[75vh]">
+                  {/* Visual Preview */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-4">
+                    <div className="w-20 h-20 rounded-lg border border-slate-200 bg-white overflow-hidden shrink-0 flex items-center justify-center p-1 shadow-2xs">
+                      <img
+                        src={displayImg}
+                        alt={optionModalProduct.nameEn}
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-mono font-bold bg-teal-50 text-teal-800 border border-teal-200 px-1.5 py-0.5 rounded">
+                        {optionModalProduct.code}
+                      </span>
+                      <h4 className="font-bold text-slate-900 text-sm mt-1">{optionModalProduct.nameEn}</h4>
+                      <p className="text-[11px] text-slate-500">{optionModalProduct.nameTh}</p>
+                      <div className="mt-1 font-mono font-bold text-teal-900 text-base">
+                        ฿{optionModalProduct.price}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Color Selection */}
+                  {availableColors.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-slate-800">
+                        1. เลือกสีสินค้า (Color Option) <span className="text-red-500">*</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {availableColors.map((col) => {
+                          const isSelected = selectedColor.toLowerCase() === col.name.toLowerCase();
+                          return (
+                            <button
+                              key={col.name}
+                              type="button"
+                              onClick={() => setSelectedColor(col.name)}
+                              className={`p-2.5 rounded-xl border transition flex items-center gap-2.5 text-left ${
+                                isSelected
+                                  ? 'border-teal-600 bg-teal-50/80 ring-2 ring-teal-500/40 font-bold text-teal-950'
+                                  : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                              }`}
+                            >
+                              {col.image ? (
+                                <img
+                                  src={col.image}
+                                  alt={col.name}
+                                  className="w-7 h-7 rounded-md object-contain border border-slate-200 bg-white p-0.5 shrink-0"
+                                />
+                              ) : (
+                                <span className="w-4 h-4 rounded-full shrink-0 border border-black/10 bg-teal-600" />
+                              )}
+                              <span className="text-xs flex-1 truncate">{col.label || col.name}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-teal-700 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Size Selection */}
+                  {availableSizes.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-slate-800">
+                        {availableColors.length > 0 ? '2. เลือกไซส์ (Size Option)' : '1. เลือกไซส์ (Size Option)'} <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {availableSizes.map((sz) => {
+                          const isSelected = selectedSize === sz;
+                          return (
+                            <button
+                              key={sz}
+                              type="button"
+                              onClick={() => setSelectedSize(sz)}
+                              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                                isSelected
+                                  ? 'bg-teal-700 text-white shadow-xs'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              <span>{sz}</span>
+                              {isSelected && <Check className="w-3 h-3 text-white" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quantity Selection */}
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                    <label className="block text-xs font-bold text-slate-800">
+                      {availableColors.length > 0 ? '3. จำนวนสั่งซื้อ' : '2. จำนวนสั่งซื้อ'}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setOptionQty((q) => Math.max(1, q - 1))}
+                        className="w-8 h-8 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 font-bold text-slate-700 text-sm flex items-center justify-center"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        value={optionQty}
+                        onChange={(e) => setOptionQty(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-16 h-8 text-center font-bold font-mono text-slate-900 border border-slate-300 rounded-lg text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setOptionQty((q) => q + 1)}
+                        className="w-8 h-8 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 font-bold text-slate-700 text-sm flex items-center justify-center"
+                      >
+                        +
+                      </button>
+                      <span className="text-xs text-slate-500 ml-2">
+                        รวม: <strong className="font-mono text-teal-900">฿{optionModalProduct.price * optionQty}</strong>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Footer */}
+            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setOptionModalProduct(null)}
+                className="px-4 py-2 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-100 text-xs font-medium"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAddApparelOption}
+                className="px-5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>เพิ่มลงใบเสร็จ (฿{optionModalProduct.price * optionQty})</span>
               </button>
             </div>
           </div>

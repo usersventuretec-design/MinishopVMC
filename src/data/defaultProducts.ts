@@ -195,4 +195,21 @@ export const INITIAL_PRODUCTS: Product[] = [
     image: PRODUCT_IMAGE_MAP['prod-16'],
     active: true,
   },
+  {
+    id: 'prod-17',
+    code: 'WB-17',
+    nameTh: 'เสื้อยืด WASABI-O 2026',
+    nameEn: 'WASABI-O T-Shirt 2026',
+    size: '1 ตัว',
+    price: 359,
+    category: 'apparel',
+    image: PRODUCT_IMAGE_MAP['prod-17'],
+    active: true,
+    hasOptions: true,
+    sizes: ['Freesize', 'M', 'L', 'XL', '2XL'],
+    colors: [
+      { name: 'Green', label: 'Green (เขียว)', image: '/assets/products/WB-17-green.png' },
+      { name: 'Latte', label: 'Latte (ลาเต้)', image: '/assets/products/WB-17-latte.png' },
+    ],
+  },
 ];

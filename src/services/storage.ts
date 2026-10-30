@@ -116,14 +116,32 @@ export function getProducts(): Product[] {
     const list: Product[] = JSON.parse(raw);
     let changed = false;
     // Upgrade existing storage items if missing image or using previous SVG illustration
-    const enriched = list.map((p) => {
+    let enriched = list.map((p) => {
       const init = INITIAL_PRODUCTS.find((i) => i.id === p.id || i.code === p.code);
       if (init && (!p.image || p.image.startsWith('data:image/svg+xml') || p.image.includes('placeholder'))) {
         changed = true;
-        return { ...p, image: init.image };
+        return { ...p, image: init.image, hasOptions: init.hasOptions, sizes: init.sizes, colors: init.colors };
+      }
+      if (init && init.hasOptions && !p.hasOptions) {
+        changed = true;
+        return { ...p, hasOptions: init.hasOptions, sizes: init.sizes, colors: init.colors };
+      }
+      if (p.code === 'WB-17' && (p.price === 350 || p.size === 'Freesize')) {
+        changed = true;
+        return { ...p, price: 359, size: '1 ตัว', hasOptions: true, sizes: init?.sizes || ['Freesize', 'M', 'L', 'XL', '2XL'], colors: init?.colors || p.colors };
       }
       return p;
     });
+
+    // Backfill any new default products (e.g. WB-17) that are not in local storage yet
+    INITIAL_PRODUCTS.forEach((init) => {
+      const exists = enriched.some((p) => p.id === init.id || p.code === init.code);
+      if (!exists) {
+        enriched.push(init);
+        changed = true;
+      }
+    });
+
     if (changed) {
       localStorage.setItem(PRODUCTS_KEY, JSON.stringify(enriched));
     }
